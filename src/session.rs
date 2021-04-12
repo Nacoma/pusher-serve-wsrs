@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use actix::*;
 use actix_web_actors::ws;
 
+use log::warn;
 use crate::models::{SubscriptionEvent, SubscriptionMessage};
 use crate::server;
 
@@ -96,84 +97,28 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsChatSession {
             ws::Message::Text(text) => {
                 let event: SubscriptionEvent = serde_json::from_str(&text).unwrap();
 
-                let message = SubscriptionMessage {
-                    app: self.app.to_owned(),
-                    id: self.id,
-                    event,
+
+                match event {
+                    SubscriptionEvent::Unknown => {
+                        warn!("unknown event received from client: {}", text);
+                    },
+
+                    _ => {
+                        let message = SubscriptionMessage {
+                            app: self.app.to_owned(),
+                            id: self.id,
+                            event,
+                        };
+
+                        self.addr
+                            .send(message)
+                            .into_actor(self)
+                            .then(|_, _, _| fut::ready(()))
+                            .wait(ctx)
+                    },
                 };
 
-                self.addr
-                    .send(message)
-                    .into_actor(self)
-                    .then(|_, _, _| fut::ready(()))
-                    .wait(ctx)
 
-                // println!("{:?}", event);
-                //
-                // let m = text.trim();
-                //
-                // // we check for /sss type of messages
-                // if m.starts_with('/') {
-                //     let v: Vec<&str> = m.splitn(2, ' ').collect();
-                //     match v[0] {
-                //         "/list" => {
-                //             // Send ListRooms message to chat server and wait for
-                //             // response
-                //             println!("List rooms");
-                //             self.addr
-                //                 .send(server::ListRooms)
-                //                 .into_actor(self)
-                //                 .then(|res, _, ctx| {
-                //                     match res {
-                //                         Ok(rooms) => {
-                //                             for room in rooms {
-                //                                 ctx.text(room);
-                //                             }
-                //                         }
-                //                         _ => println!("Something is wrong"),
-                //                     }
-                //                     fut::ready(())
-                //                 })
-                //                 .wait(ctx)
-                //             // .wait(ctx) pauses all events in context,
-                //             // so actor wont receive any new messages until it get list
-                //             // of rooms back
-                //         }
-                //         "/join" => {
-                //             if v.len() == 2 {
-                //                 self.room = v[1].to_owned();
-                //                 self.addr.do_send(server::Subscribe {
-                //                     id: self.id,
-                //                     channel: self.room.clone(),
-                //                 });
-                //
-                //                 ctx.text("joined");
-                //             } else {
-                //                 ctx.text("!!! room name is required");
-                //             }
-                //         }
-                //         "/name" => {
-                //             if v.len() == 2 {
-                //                 self.name = Some(v[1].to_owned());
-                //             } else {
-                //                 ctx.text("!!! name is required");
-                //             }
-                //         }
-                //         _ => ctx.text(format!("!!! unknown command: {:?}", m)),
-                //     }
-                // } else {
-                //     let msg = if let Some(ref name) = self.name {
-                //         format!("{}: {}", name, m)
-                //     } else {
-                //         m.to_owned()
-                //     };
-                //     // send message to chat server
-                //     self.addr.do_send(server::ClientMessage {
-                //         id: self.id,
-                //         msg,
-                //         room: self.room.clone(),
-                //     })
-                // }
             }
             ws::Message::Binary(_) => println!("Unexpected binary"),
             ws::Message::Close(reason) => {

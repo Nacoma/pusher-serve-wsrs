@@ -57,6 +57,7 @@ impl actix::Message for ListRooms {
 /// `ChatServer` manages chat rooms and responsible for coordinating chat
 /// session. implementation is super primitive
 pub struct PusherServer {
+    app_keys: HashMap<String, String>,
     apps: HashMap<String, App>,
     rng: ThreadRng,
 }
@@ -111,8 +112,9 @@ impl App {
 }
 
 impl PusherServer {
-    pub fn new() -> PusherServer {
+    pub fn new(app_keys: HashMap<String, String>) -> PusherServer {
         PusherServer {
+            app_keys,
             apps: HashMap::new(),
             rng: rand::thread_rng(),
         }
@@ -276,9 +278,11 @@ impl Handler<ClientEvent> for PusherServer {
     type Result = ();
 
     fn handle(&mut self, msg: ClientEvent, _: &mut Context<Self>) -> Self::Result {
+        let app = self.app_keys.get(&msg.app.to_string()).unwrap();
+
         if let Some(ref channel) = msg.channel {
             self.send_message(
-                msg.app.as_str(),
+                app.as_str(),
                 channel.as_str(),
                 &serde_json::to_string(&SendClientEvent {
                     channel: channel.to_string(),
@@ -293,7 +297,7 @@ impl Handler<ClientEvent> for PusherServer {
         if let Some(ref channels) = msg.channels {
             for channel in channels {
                 self.send_message(
-                    msg.app.as_str(),
+                    app.as_str(),
                     channel.as_str(),
                     &serde_json::to_string(&SendClientEvent {
                         channel: channel.to_string(),
@@ -313,6 +317,10 @@ impl Handler<SubscriptionMessage> for PusherServer {
 
     fn handle(&mut self, msg: SubscriptionMessage, _: &mut Context<Self>) {
         match msg.event {
+            SubscriptionEvent::Unknown => {
+                panic!("unknown subscription event");
+            },
+
             SubscriptionEvent::Subscribe {
                 channel_data,
                 auth: _,

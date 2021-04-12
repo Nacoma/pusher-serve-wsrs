@@ -90,6 +90,9 @@ pub enum SubscriptionEvent {
 
     #[serde(rename = "pusher:unsubscribe")]
     Unsubscribe { channel: String },
+
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -121,7 +124,7 @@ pub struct ClientEvent {
     pub name: String,
     pub channels: Option<Vec<String>>,
     pub channel: Option<String>,
-    pub socket_id: Option<usize>,
+    pub socket_id: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
