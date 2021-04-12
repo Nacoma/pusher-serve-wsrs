@@ -2,17 +2,16 @@
 //! And manages available rooms. Peers send messages to other peers in same
 //! room through `ChatServer`.
 
-use std::borrow::BorrowMut;
 use std::collections::{HashMap, HashSet};
-use std::sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering},
-};
 
 use actix::prelude::*;
-use rand::{self, Rng, rngs::ThreadRng};
+use rand::{self, rngs::ThreadRng, Rng};
 
-use crate::models::{ChannelEvent, ClientEvent, PresenceChannelData, PresenceInternalData, PresenceMemberRemovedData, SubscriptionData, SubscriptionEvent, SubscriptionMessage, SystemEvent, ConnectionEstablishedPayload, SendClientEvent};
+use crate::models::{
+    ChannelEvent, ClientEvent, ConnectionEstablishedPayload, PresenceChannelData,
+    PresenceInternalData, PresenceMemberRemovedData, SendClientEvent, SubscriptionData,
+    SubscriptionEvent, SubscriptionMessage, SystemEvent,
+};
 
 /// Chat server sends this messages to session
 #[derive(Message)]
@@ -59,9 +58,7 @@ impl actix::Message for ListRooms {
 /// session. implementation is super primitive
 pub struct PusherServer {
     apps: HashMap<String, App>,
-    rooms: HashMap<String, HashSet<usize>>,
     rng: ThreadRng,
-    visitor_count: Arc<AtomicUsize>,
 }
 
 #[derive(Debug)]
@@ -113,45 +110,18 @@ impl App {
     }
 }
 
-impl App {
-    pub fn add_session_to_channel(&mut self, channel: &str, id: usize)
-    {
-        self.channels
-            .entry(channel.to_owned())
-            .or_insert_with(|| {
-                Channel::new(get_channel_type(channel))
-            })
-            .sessions
-            .insert(id);
-    }
-}
-
 impl PusherServer {
-    pub fn new(visitor_count: Arc<AtomicUsize>) -> PusherServer {
+    pub fn new() -> PusherServer {
         PusherServer {
-            rooms: HashMap::new(),
             apps: HashMap::new(),
             rng: rand::thread_rng(),
-            visitor_count,
         }
     }
 }
 
 impl PusherServer {
-    fn send_app(&self, app: &str, message: &str)
-    {
-        if let Some(app) = self.apps.get(app) {
-            for id in app.sessions.keys() {
-                if let Some(addr) = app.sessions.get(id) {
-                    let _ = addr.do_send(Message(message.to_owned()));
-                }
-            }
-        }
-    }
-
     /// Send message to all users in the room
-    fn send_message(&self, app: &str, channel: &str, message: &str, socket_id: Option<usize>)
-    {
+    fn send_message(&self, app: &str, channel: &str, message: &str, socket_id: Option<usize>) {
         if let Some(app) = self.apps.get(app) {
             if let Some(channel) = app.channels.get(channel) {
                 for id in &channel.sessions {
@@ -171,8 +141,7 @@ impl PusherServer {
         }
     }
 
-    fn send_direct(&self, app: &str, message: &str, socket_id: usize)
-    {
+    fn send_direct(&self, app: &str, message: &str, socket_id: usize) {
         if let Some(app) = self.apps.get(app) {
             if let Some(addr) = app.sessions.get(&socket_id) {
                 let _ = addr.do_send(Message(message.to_owned()));
@@ -180,17 +149,22 @@ impl PusherServer {
         }
     }
 
-    fn insert_channel_session(&mut self, app: &str, channel: &str, id: usize, data: Option<PresenceChannelData>)
-    {
+    fn insert_channel_session(
+        &mut self,
+        app: &str,
+        channel: &str,
+        id: usize,
+        data: Option<PresenceChannelData>,
+    ) {
         let internal_type = get_channel_type(channel);
 
-        let found_channel = self.apps.entry(app.to_string())
+        let found_channel = self
+            .apps
+            .entry(app.to_string())
             .or_insert_with(App::new)
             .channels
             .entry(channel.to_owned())
-            .or_insert_with(|| {
-                Channel::new(internal_type)
-            });
+            .or_insert_with(|| Channel::new(internal_type));
 
         found_channel.sessions.insert(id);
 
@@ -202,8 +176,7 @@ impl PusherServer {
         };
     }
 
-    fn remove_channel_session(&mut self, app: &str, channel: &str, id: usize) -> bool
-    {
+    fn remove_channel_session(&mut self, app: &str, channel: &str, id: usize) -> bool {
         let mut found = false;
 
         if let Some(app) = self.apps.get_mut(app) {
@@ -234,11 +207,11 @@ impl Handler<Connect> for PusherServer {
         // register session with random id
         let id = self.rng.gen::<usize>();
 
-        self.apps.entry(msg.app.to_owned())
+        self.apps
+            .entry(msg.app.to_owned())
             .or_insert_with(App::new)
             .sessions
             .insert(id, msg.addr);
-
 
         self.send_direct(
             msg.app.as_str(),
@@ -246,10 +219,10 @@ impl Handler<Connect> for PusherServer {
                 data: ConnectionEstablishedPayload {
                     socket_id: format!("{}.{}", id.to_string(), 1),
                     activity_timeout: 9000,
-                }
+                },
             })
-                .unwrap()
-                .as_str(),
+            .unwrap()
+            .as_str(),
             id,
         );
 
@@ -270,7 +243,7 @@ impl Handler<Disconnect> for PusherServer {
                         user_id: msg.id.to_string(),
                     },
                 })
-                    .unwrap();
+                .unwrap();
 
                 if channel.sessions.contains(&msg.id) {
                     match get_channel_type(channel_name.as_str()) {
@@ -311,7 +284,8 @@ impl Handler<ClientEvent> for PusherServer {
                     channel: channel.to_string(),
                     event: msg.name.clone(),
                     data: msg.data.clone(),
-                }).unwrap(),
+                })
+                .unwrap(),
                 None,
             );
         }
@@ -325,7 +299,8 @@ impl Handler<ClientEvent> for PusherServer {
                         channel: channel.to_string(),
                         event: msg.name.clone(),
                         data: msg.data.clone(),
-                    }).unwrap(),
+                    })
+                    .unwrap(),
                     None,
                 );
             }
@@ -336,8 +311,7 @@ impl Handler<ClientEvent> for PusherServer {
 impl Handler<SubscriptionMessage> for PusherServer {
     type Result = ();
 
-    fn handle(&mut self, msg: SubscriptionMessage, _: &mut Context<Self>)
-    {
+    fn handle(&mut self, msg: SubscriptionMessage, _: &mut Context<Self>) {
         match msg.event {
             SubscriptionEvent::Subscribe {
                 channel_data,
@@ -367,12 +341,14 @@ impl Handler<SubscriptionMessage> for PusherServer {
                                 },
                                 channel: channel.to_string(),
                             })
-                                .unwrap()
-                                .as_str(),
+                            .unwrap()
+                            .as_str(),
                             Some(msg.id),
                         );
 
-                        let channel = self.apps.get(&msg.app.to_string())
+                        let channel = self
+                            .apps
+                            .get(&msg.app.to_string())
                             .unwrap()
                             .channels
                             .get(&channel.to_string())
@@ -389,12 +365,11 @@ impl Handler<SubscriptionMessage> for PusherServer {
                             presence.hash.insert(id.to_string(), info.user_info.clone());
                         }
 
-
-                        SubscriptionData { presence: Some(presence) }
+                        SubscriptionData {
+                            presence: Some(presence),
+                        }
                     }
-                    _ => SubscriptionData {
-                        presence: None,
-                    },
+                    _ => SubscriptionData { presence: None },
                 };
 
                 self.send_direct(
@@ -403,8 +378,8 @@ impl Handler<SubscriptionMessage> for PusherServer {
                         channel: channel.clone(),
                         data,
                     })
-                        .unwrap()
-                        .as_str(),
+                    .unwrap()
+                    .as_str(),
                     msg.id,
                 );
             }
@@ -412,11 +387,8 @@ impl Handler<SubscriptionMessage> for PusherServer {
             SubscriptionEvent::Unsubscribe {
                 channel: channel_name,
             } => {
-                let found = self.remove_channel_session(
-                    &msg.app,
-                    channel_name.clone().as_str(),
-                    msg.id
-                );
+                let found =
+                    self.remove_channel_session(&msg.app, channel_name.clone().as_str(), msg.id);
 
                 if found {
                     match get_channel_type(channel_name.as_str()) {
@@ -430,12 +402,12 @@ impl Handler<SubscriptionMessage> for PusherServer {
                                         user_id: msg.id.to_string(),
                                     },
                                 })
-                                    .unwrap()
-                                    .as_str(),
+                                .unwrap()
+                                .as_str(),
                                 Some(msg.id),
                             );
-                        },
-                        _ => {},
+                        }
+                        _ => {}
                     };
                 }
             }

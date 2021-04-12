@@ -1,16 +1,13 @@
-use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
-use serde::Deserialize;
 use clap::{AppSettings, Clap};
+use serde::Deserialize;
 
-use std::env;
-use actix::{Actor, Addr};
-use actix_web::{App, HttpServer, web};
+use actix::Actor;
+use actix_web::{web, App, HttpServer};
 
-mod session;
-mod server;
 mod models;
 mod routes;
+mod server;
+mod session;
 
 #[derive(Clap)]
 #[clap(version = "0.1", author = "Cody Mann <nathancodymann@gmail.com>")]
@@ -18,7 +15,6 @@ mod routes;
 struct Opts {
     config_file_path: String,
 }
-
 
 #[derive(Deserialize)]
 struct Conf {
@@ -38,18 +34,15 @@ async fn main() -> std::io::Result<()> {
         None => 6001,
     };
 
-    let app_state = Arc::new(AtomicUsize::new(0));
+    let server = server::PusherServer::new().start();
 
-    let server = server::PusherServer::new(app_state.clone()).start();
-
-    HttpServer::new(move ||
+    HttpServer::new(move || {
         App::new()
-            .data(app_state.clone())
             .data(server.clone())
             .service(web::resource("/app/{app}").to(routes::chat_route))
             .route("/apps/{app}/events", web::post().to(routes::event))
-    )
-        .bind(format!("127.0.0.1:{}", port))?
-        .run()
-        .await
+    })
+    .bind(format!("127.0.0.1:{}", port))?
+    .run()
+    .await
 }

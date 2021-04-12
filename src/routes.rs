@@ -1,14 +1,12 @@
-use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 
-use actix::{Actor, Addr};
-use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, web, Responder};
+use actix::Addr;
+use actix_web::{web, Error, HttpRequest, HttpResponse, Responder};
 use actix_web_actors::ws;
 
-use crate::session::WsChatSession;
-use crate::models::{ClientEvent};
+use crate::models::ClientEvent;
 use crate::server;
+use crate::session::WsChatSession;
 
 /// Entry point for our websocket route
 pub async fn chat_route(
@@ -35,7 +33,7 @@ pub async fn chat_route(
 pub async fn event(
     req: HttpRequest,
     info: web::Json<ClientEvent>,
-    srv: web::Data<Addr<server::PusherServer>>
+    srv: web::Data<Addr<server::PusherServer>>,
 ) -> impl Responder {
     let app: String = req.match_info().get("app").unwrap().parse().unwrap();
 

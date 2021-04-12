@@ -3,8 +3,8 @@ use std::time::{Duration, Instant};
 use actix::*;
 use actix_web_actors::ws;
 
-use crate::server;
 use crate::models::{SubscriptionEvent, SubscriptionMessage};
+use crate::server;
 
 /// How often heartbeat pings are sent
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -76,11 +76,7 @@ impl Handler<server::Message> for WsChatSession {
 
 /// WebSocket message handler
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsChatSession {
-    fn handle(
-        &mut self,
-        msg: Result<ws::Message, ws::ProtocolError>,
-        ctx: &mut Self::Context,
-    ) {
+    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         let msg = match msg {
             Err(_) => {
                 ctx.stop();
@@ -109,10 +105,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsChatSession {
                 self.addr
                     .send(message)
                     .into_actor(self)
-                    .then(|res, _, ctx| {
-                        println!("something happened!");
-                        fut::ready(())
-                    })
+                    .then(|_, _, _| fut::ready(()))
                     .wait(ctx)
 
                 // println!("{:?}", event);

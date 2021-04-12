@@ -1,9 +1,7 @@
-use std::collections::HashMap;
-use std::str::FromStr;
 use actix::prelude::Message;
+use std::collections::HashMap;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde::de::IntoDeserializer;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -15,15 +13,12 @@ pub enum SystemEvent {
         data: ConnectionEstablishedPayload,
     },
     #[serde(rename = "pusher:error")]
-    PusherError {
-        message: String,
-        code: u16,
-    },
+    PusherError { message: String, code: u16 },
 }
 
 pub fn deserialize_string_from_number<'de, D>(deserializer: D) -> Result<String, D::Error>
-    where
-        D: Deserializer<'de>,
+where
+    D: Deserializer<'de>,
 {
     #[derive(Deserialize)]
     #[serde(untagged)]
@@ -54,12 +49,11 @@ pub enum ChannelEvent {
         channel: String,
         #[serde(with = "serde_with::json::nested")]
         data: PresenceChannelData,
-
     },
     #[serde(rename = "pusher_internal:member_removed")]
     PusherInternalMemberRemoved {
         channel: String,
-        data: PresenceMemberRemovedData
+        data: PresenceMemberRemovedData,
     },
 }
 
@@ -80,7 +74,7 @@ pub enum DataType {
 pub struct SubscriptionMessage {
     pub id: usize,
     pub app: String,
-    pub event: SubscriptionEvent
+    pub event: SubscriptionEvent,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -95,12 +89,8 @@ pub enum SubscriptionEvent {
     },
 
     #[serde(rename = "pusher:unsubscribe")]
-    Unsubscribe {
-        channel: String,
-    },
+    Unsubscribe { channel: String },
 }
-
-
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SubscriptionData {
@@ -149,7 +139,7 @@ pub struct ConnectionEstablishedPayload {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TriggerEventResponse {
-    pub channels: Vec<Channel>
+    pub channels: Vec<Channel>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -180,10 +170,8 @@ pub struct User {
 
 #[cfg(test)]
 mod tests {
-    use crate::models::{DataType};
+    use crate::models::DataType;
 
     #[test]
-    fn can_deserialize_system_events() {
-
-    }
+    fn can_deserialize_system_events() {}
 }
