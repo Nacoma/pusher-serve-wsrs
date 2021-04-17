@@ -3,9 +3,9 @@ use std::time::{Duration, Instant};
 use actix::*;
 use actix_web_actors::ws;
 
-use log::warn;
 use crate::models::{SubscriptionEvent, SubscriptionMessage};
 use crate::server;
+use log::warn;
 
 /// How often heartbeat pings are sent
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -97,11 +97,10 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsChatSession {
             ws::Message::Text(text) => {
                 let event: SubscriptionEvent = serde_json::from_str(&text).unwrap();
 
-
                 match event {
                     SubscriptionEvent::Unknown => {
                         warn!("unknown event received from client: {}", text);
-                    },
+                    }
 
                     _ => {
                         let message = SubscriptionMessage {
@@ -115,10 +114,8 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsChatSession {
                             .into_actor(self)
                             .then(|_, _, _| fut::ready(()))
                             .wait(ctx)
-                    },
+                    }
                 };
-
-
             }
             ws::Message::Binary(_) => println!("Unexpected binary"),
             ws::Message::Close(reason) => {

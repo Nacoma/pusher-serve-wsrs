@@ -123,7 +123,12 @@ impl PusherServer {
 
 impl PusherServer {
     /// Send message to all users in the room
-    fn send_message(&self, app: &str, channel: &str, message: &str, socket_id: Option<usize>) {
+    fn send_message<S>(&self, app: &str, channel: &str, message: S, socket_id: Option<usize>)
+    where
+    S: serde::Serialize
+    {
+        let message = serde_json::to_string(&message).unwrap();
+
         if let Some(app) = self.apps.get(app) {
             if let Some(channel) = app.channels.get(channel) {
                 for id in &channel.sessions {
@@ -239,13 +244,12 @@ impl Handler<Disconnect> for PusherServer {
     fn handle(&mut self, msg: Disconnect, _: &mut Context<Self>) {
         for (app_name, app) in self.apps.iter() {
             for (channel_name, channel) in app.channels.iter() {
-                let message = serde_json::to_string(&ChannelEvent::PusherInternalMemberRemoved {
+                let message = ChannelEvent::PusherInternalMemberRemoved {
                     channel: channel_name.to_string(),
                     data: PresenceMemberRemovedData {
                         user_id: msg.id.to_string(),
                     },
-                })
-                .unwrap();
+                };
 
                 if channel.sessions.contains(&msg.id) {
                     match get_channel_type(channel_name.as_str()) {
@@ -253,7 +257,7 @@ impl Handler<Disconnect> for PusherServer {
                             self.send_message(
                                 app_name.as_str(),
                                 channel_name.clone().as_str(),
-                                message.as_str(),
+                                message,
                                 Some(msg.id),
                             );
                         }
@@ -280,34 +284,29 @@ impl Handler<ClientEvent> for PusherServer {
     fn handle(&mut self, msg: ClientEvent, _: &mut Context<Self>) -> Self::Result {
         let app = self.app_keys.get(&msg.app.to_string()).unwrap();
 
+        let mut channels: Vec<&String> = vec![];
+
         if let Some(ref channel) = msg.channel {
+            channels.push(channel);
+        }
+
+        if let Some(ref _channels) = msg.channels {
+            for channel in _channels {
+                channels.push(channel);
+            }
+        }
+
+        for channel in channels {
             self.send_message(
                 app.as_str(),
                 channel.as_str(),
-                &serde_json::to_string(&SendClientEvent {
+                SendClientEvent {
                     channel: channel.to_string(),
                     event: msg.name.clone(),
                     data: msg.data.clone(),
-                })
-                .unwrap(),
+                },
                 None,
             );
-        }
-
-        if let Some(ref channels) = msg.channels {
-            for channel in channels {
-                self.send_message(
-                    app.as_str(),
-                    channel.as_str(),
-                    &serde_json::to_string(&SendClientEvent {
-                        channel: channel.to_string(),
-                        event: msg.name.clone(),
-                        data: msg.data.clone(),
-                    })
-                    .unwrap(),
-                    None,
-                );
-            }
         }
     }
 }
@@ -319,7 +318,7 @@ impl Handler<SubscriptionMessage> for PusherServer {
         match msg.event {
             SubscriptionEvent::Unknown => {
                 panic!("unknown subscription event");
-            },
+            }
 
             SubscriptionEvent::Subscribe {
                 channel_data,
@@ -342,15 +341,13 @@ impl Handler<SubscriptionMessage> for PusherServer {
                         self.send_message(
                             msg.app.as_str(),
                             channel.as_str(),
-                            serde_json::to_string(&ChannelEvent::PusherInternalMemberAdded {
+                            ChannelEvent::PusherInternalMemberAdded {
                                 data: PresenceChannelData {
                                     user_id: msg.id.to_string(),
                                     user_info: channel_data.user_info.clone(),
                                 },
                                 channel: channel.to_string(),
-                            })
-                            .unwrap()
-                            .as_str(),
+                            },
                             Some(msg.id),
                         );
 
@@ -404,14 +401,12 @@ impl Handler<SubscriptionMessage> for PusherServer {
                             self.send_message(
                                 msg.app.as_str(),
                                 channel_name.clone().as_str(),
-                                serde_json::to_string(&ChannelEvent::PusherInternalMemberRemoved {
+                                ChannelEvent::PusherInternalMemberRemoved {
                                     channel: channel_name.to_string(),
                                     data: PresenceMemberRemovedData {
                                         user_id: msg.id.to_string(),
                                     },
-                                })
-                                .unwrap()
-                                .as_str(),
+                                },
                                 Some(msg.id),
                             );
                         }

@@ -43,7 +43,7 @@ pub async fn event(
         channels: info.channels.clone(),
         channel: info.channel.clone(),
         name: info.name.clone(),
-        socket_id: info.socket_id.clone(),
+        socket_id: info.socket_id,
     };
 
     srv.get_ref().clone().do_send(msg);
