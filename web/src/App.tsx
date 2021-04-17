@@ -11,7 +11,7 @@ import {
   withStyles,
 } from '@material-ui/core';
 
-const wsURL = `wss://socket.practice.test/apps/test-app1`;
+const wsURL = `ws://localhost:6001/app/asdfzsv1234124412`;
 
 interface State {
   clients: string[]
