@@ -1,201 +1,85 @@
 import {hot} from 'react-hot-loader';
 import React from 'react';
-import WebSocketClient from './WebSocketClient';
-import {v4 as uuid} from 'uuid';
 import {
-  Button,
-  createStyles,
+  AppBar, createStyles,
   CssBaseline,
-  Theme,
-  WithStyles,
-  withStyles,
+  IconButton, Theme,
+  Toolbar,
+  Typography, WithStyles, withStyles,
 } from '@material-ui/core';
+import MenuIcon from '@material-ui/icons/Menu';
 
-const wsURL = `ws://localhost:6001/app/asdfzsv1234124412`;
-
-interface State {
-  clients: string[]
-}
+import {Provider} from 'react-redux';
+import store from './store';
+import {BrowserRouter as Router, Switch, Route} from 'react-router-dom';
+import {Redirect} from 'react-router';
+import AppRouter from './routers/app-router';
+import NavigationSidebar from './components/navigation-sidebar';
+import Dashboard from './page/dashboard';
 
 type Props = WithStyles<typeof styles>;
+type State = {};
 
-const styles = (theme: Theme) => createStyles({
-  root: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    minHeight: '100vh',
-  },
-
-  client: {
-    width: '25%',
-    display: 'flex',
-    justifyContent: 'center',
-    flexDirection: 'column',
-    padding: theme.spacing(1),
-  },
-
-  action: {
-    padding: theme.spacing(1),
-  },
-
-  innerClient: {
-    backgroundColor: theme.palette.background.paper,
-    padding: theme.spacing(1),
-  },
-});
-
-// eslint-disable-next-line require-jsdoc
 class App extends React.Component<Props, State> {
   constructor(props: Props) {
     super(props);
-
-    this.state = {
-      clients: [
-        uuid(),
-        uuid(),
-      ],
-    };
-
-    this.addClient = this.addClient.bind(this);
-    this.removeClient = this.removeClient.bind(this);
-  }
-
-  addClient(): void {
-    this.setState({
-      clients: [...this.state.clients, uuid()],
-    });
-  }
-
-  removeClient(id: string): void {
-    this.setState({
-      clients: this.state.clients.filter((_id) => _id !== id),
-    });
   }
 
   render() {
+    const {classes} = this.props;
+
     return (
       <>
         <CssBaseline/>
 
-        <div>
-          <Button
-            onClick={this.addClient}
-            color={'primary'}
-            variant={'contained'}
-          >
-            Add Client
-          </Button>
+        <AppBar position={'relative'} className={classes.appBar}>
+          <Toolbar>
+            <IconButton edge={'start'} color={'inherit'}>
+              <MenuIcon/>
+            </IconButton>
+            <Typography variant={'h6'}>
+              Pusher WsRs
+            </Typography>
+          </Toolbar>
+        </AppBar>
 
-          <div className={this.props.classes.root}>
-            {this.state.clients.map((id) => (
-              <div className={this.props.classes.client} key={id}>
-                <div className={this.props.classes.action}>
-                  <Button
-                    onClick={() => {
-                      this.removeClient(id);
-                    }}
-                    color={'primary'}
-                    variant={'contained'}
-                  >
-                    Remove Client
-                  </Button>
-                </div>
+        <Provider store={store}>
+          <Router>
+            <div className={classes.page}>
+              <NavigationSidebar/>
 
-                <div className={this.props.classes.innerClient}>
-                  <WebSocketClient url={wsURL} id={id}/>
-                </div>
+              <div className={classes.content}>
+                <Switch>
+                  <Route path={'/'} exact>
+                    <Dashboard/>
+                  </Route>
+
+                  <Route path={'/apps'}>
+                    <AppRouter/>
+                  </Route>
+                </Switch>
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
+          </Router>
+        </Provider>
       </>
     );
   };
 }
 
-export default hot(module)(withStyles(styles)(App));
+const styles = (theme: Theme) => createStyles({
+  appBar: {
+    zIndex: theme.zIndex.drawer + 1,
+  },
 
-// {/* <ul>*/}
-// {/*  <li>WS: {wsURL}</li>*/}
-// {/*  <li>Ready State: {this.state.readyState}</li>*/}
-// {/*  <li>Connected: {this.state.isOpen ? 1 : 0}</li>*/}
-// {/*  <li>Error: {this.state.error || 'none'}</li>*/}
-// {/* </ul>*/}
-//
-// {/* <hr/>*/}
-//
-// {/* <h1>Subscribe</h1>*/}
-// {/* <form onSubmit={(e) => {*/}
-// {/*  e.preventDefault();*/}
-//
-// {/*  this.ws?.send(JSON.stringify({*/}
-// {/*    event: 'pusher:subscribe',*/}
-// {/*    data: {*/}
-// {/*      channel: this.state.sub,*/}
-// {/*      channel_data: JSON.stringify(channelData),*/}
-// {/*    },*/}
-// {/*  }));*/}
-//
-// {/*  this.setState({*/}
-// {/*    sub: '',*/}
-// {/*  });*/}
-// {/* }}>*/}
-// {/*  <label htmlFor="channel">Channel</label>*/}
-// {/*  <input*/}
-// {/*    type="text"*/}
-// {/*    id="channel"*/}
-// {/*    value={this.state.sub}*/}
-// {/*    onChange={(e) => {*/}
-// {/*      this.setState({*/}
-// {/*        sub: e.target.value,*/}
-// {/*      });*/}
-// {/*    }}/>*/}
-// {/*  <br/>*/}
-//
-// {/*  <button type={'submit'}>*/}
-// {/*    Subscribe*/}
-// {/*  </button>*/}
-// {/* </form>*/}
-//
-// {/* <div>*/}
-// {/*  {this.state.messages.map((msg, i) => (*/}
-// {/*    <p key={i}>*/}
-// {/*      {msg}*/}
-// {/*    </p>*/}
-// {/*  ))}*/}
-// {/* </div>*/}
-//
-// {/* <h1>Unsubscribe</h1>*/}
-// {/* <form onSubmit={(e) => {*/}
-// {/*  e.preventDefault();*/}
-//
-// {/*  this.ws?.send(JSON.stringify({*/}
-// {/*    event: 'pusher:unsubscribe',*/}
-// {/*    data: {*/}
-// {/*      channel: this.state.unsub,*/}
-// {/*    },*/}
-// {/*  }));*/}
-//
-// {/*  this.setState({*/}
-// {/*    unsub: '',*/}
-// {/*  });*/}
-// {/* }}>*/}
-//
-//
-// {/*  <label htmlFor="channel">Channel</label>*/}
-// {/*  <input*/}
-// {/*    type="text"*/}
-// {/*    id="channel"*/}
-// {/*    value={this.state.unsub}*/}
-// {/*    onChange={(e) => {*/}
-// {/*      this.setState({*/}
-// {/*        unsub: e.target.value,*/}
-// {/*      });*/}
-// {/*    }}/>*/}
-// {/*  <br/>*/}
-//
-// {/*  <button type={'submit'}>*/}
-// {/*    Unsubscribe*/}
-// {/*  </button>*/}
-//
-// {/* </form>*/}
+  page: {
+    display: 'flex',
+  },
+
+  content: {
+    padding: theme.spacing(1),
+    flexGrow: 1,
+  },
+});
+
+export default hot(module)(withStyles(styles)(App));

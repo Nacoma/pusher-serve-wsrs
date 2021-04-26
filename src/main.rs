@@ -1,20 +1,34 @@
+#[macro_use]
+extern crate erased_serde;
+#[macro_use]
+extern crate diesel;
+
+use diesel::prelude::*;
+use dotenv::dotenv;
+
 use clap::{AppSettings, Clap};
 use serde::Deserialize;
 
 use actix::Actor;
 use actix_web::{web, App, HttpServer};
-use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use crate::pusher::Pusher;
+use crate::server::{Server, routes};
+use std::env;
+use crate::repository::Repository;
+use actix_cors::Cors;
 
 mod models;
-mod routes;
 mod server;
-mod session;
+mod pusher;
+mod schema;
+mod repository;
 
 #[derive(Clap)]
 #[clap(version = "0.1", author = "Cody Mann <nathancodymann@gmail.com>")]
 #[clap(setting = AppSettings::ColoredHelp)]
 struct Opts {
-    config_file_path: String,
+    //
 }
 
 #[derive(Deserialize, Debug)]
@@ -29,34 +43,50 @@ struct ConfApp {
     key: String,
 }
 
+fn establish_connection() -> SqliteConnection {
+    let db_url = env::var("DATABASE_URL")
+        .expect("DATABASE_URL must be set");
+
+    SqliteConnection::establish(&db_url)
+        .expect(&format!("Error connected to {}", db_url))
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    dotenv().ok();
+
     env_logger::init();
 
-    let opts: Opts = Opts::parse();
-
-    let conf_file = std::fs::read_to_string(opts.config_file_path).unwrap();
-
-    let conf: Conf = toml::from_str(conf_file.as_str()).unwrap();
-
-    let port = match conf.port {
-        Some(p) => p,
-        None => 6001,
+    let port: i32 = match env::var("PORT") {
+        Ok(v) => v.parse::<i32>().unwrap(),
+        Err(_) => 6001,
     };
 
-    let mut app_keys: HashMap<String, String> = HashMap::new();
+    let pusher = Arc::new(
+        Mutex::new(
+            Pusher::new(Repository::new(establish_connection()))
+        )
+    );
 
-    for app in conf.apps {
-        app_keys.insert(app.id, app.key);
-    }
-
-    let server = server::PusherServer::new(app_keys).start();
+    let server = Server::new(pusher.clone()).start();
 
     HttpServer::new(move || {
         App::new()
+            .wrap(
+                Cors::permissive()
+                    .allow_any_header()
+                    .allow_any_method()
+                    .allow_any_origin()
+            )
             .data(server.clone())
-            .service(web::resource("/app/{app}").to(routes::chat_route))
-            .route("/apps/{app}/events", web::post().to(routes::event))
+            .data(pusher.clone())
+            .service(web::resource("/app/{app}").to(routes::ws::connect))
+            .route("/apps/{app}/events", web::post().to(routes::ws::event))
+            .route("/apps/{app}/channels", web::get().to(routes::ws::get_channels))
+            .route("/apps/{app}/channels/{channel}/users", web::get().to(routes::ws::get_channel_users))
+            .route("/api/apps", web::post().to(routes::apps::store))
+            .route("/api/apps", web::get().to(routes::apps::index))
+            .route("/api/apps/{app}", web::delete().to(routes::apps::delete))
     })
     .bind(format!("127.0.0.1:{}", port))?
     .run()

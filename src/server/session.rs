@@ -3,9 +3,9 @@ use std::time::{Duration, Instant};
 use actix::*;
 use actix_web_actors::ws;
 
-use crate::models::{SubscriptionEvent, SubscriptionMessage};
-use crate::server;
-use log::warn;
+use log::{warn, debug};
+use crate::server::Server;
+use crate::server::messages::{Connect, Disconnect, ClientEvent, ClientEventMessage};
 
 /// How often heartbeat pings are sent
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -24,7 +24,7 @@ pub struct WsChatSession {
     /// peer name
     pub name: Option<String>,
     /// Chat server
-    pub addr: Addr<server::PusherServer>,
+    pub addr: Addr<Server>,
 }
 
 impl Actor for WsChatSession {
@@ -43,7 +43,7 @@ impl Actor for WsChatSession {
         // across all routes within application
         let addr = ctx.address();
         self.addr
-            .send(server::Connect {
+            .send(Connect {
                 addr: addr.recipient(),
                 app: self.app.to_owned(),
             })
@@ -61,16 +61,16 @@ impl Actor for WsChatSession {
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
         // notify chat server
-        self.addr.do_send(server::Disconnect { id: self.id });
+        self.addr.do_send(Disconnect { id: self.id });
         Running::Stop
     }
 }
 
 /// Handle messages from chat server, we simply send it to peer websocket
-impl Handler<server::Message> for WsChatSession {
+impl Handler<crate::server::messages::Message> for WsChatSession {
     type Result = ();
 
-    fn handle(&mut self, msg: server::Message, ctx: &mut Self::Context) {
+    fn handle(&mut self, msg: crate::server::messages::Message, ctx: &mut Self::Context) {
         ctx.text(msg.0);
     }
 }
@@ -86,6 +86,8 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsChatSession {
             Ok(msg) => msg,
         };
 
+        debug!("{:?}", msg);
+
         match msg {
             ws::Message::Ping(msg) => {
                 self.hb = Instant::now();
@@ -95,18 +97,18 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsChatSession {
                 self.hb = Instant::now();
             }
             ws::Message::Text(text) => {
-                let event: SubscriptionEvent = serde_json::from_str(&text).unwrap();
+                let event: ClientEvent = serde_json::from_str(&text).unwrap();
 
                 match event {
-                    SubscriptionEvent::Unknown => {
+                    ClientEvent::Unknown => {
                         warn!("unknown event received from client: {}", text);
                     }
 
                     _ => {
-                        let message = SubscriptionMessage {
+                        let message = ClientEventMessage {
                             app: self.app.to_owned(),
                             id: self.id,
-                            event,
+                            message: event,
                         };
 
                         self.addr
@@ -142,7 +144,7 @@ impl WsChatSession {
                 println!("Websocket Client heartbeat failed, disconnecting!");
 
                 // notify chat server
-                act.addr.do_send(server::Disconnect { id: act.id });
+                act.addr.do_send(Disconnect { id: act.id });
 
                 // stop actor
                 ctx.stop();
