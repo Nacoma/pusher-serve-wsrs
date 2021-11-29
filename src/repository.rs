@@ -24,6 +24,13 @@ impl Repository {
         }
     }
 
+    pub fn find_app_by_key(&self, k: String) -> Option<AppModel> {
+        match apps.filter(key.eq(k)).first(&self.conn) {
+            Ok(r) => Some(r),
+            Err(_) => None,
+        }
+    }
+
     pub fn delete_app(&self, app_id: i32) -> () {
         delete(apps.filter(id.eq(app_id))).execute(&self.conn).unwrap();
     }
@@ -33,6 +40,7 @@ impl Repository {
     }
 
     pub fn insert_app(&self, app: &NewApp) -> AppModel {
+        println!("{:?}", app);
         let mut results: Vec<AppModel> = self.conn.transaction::<_, Error, _>(|| {
             insert_into(apps).values(app).execute(&self.conn)?;
 

@@ -1,9 +1,7 @@
-use crate::server::messages::DataType;
-
 #[derive(Clone)]
 pub struct Broadcast {
     pub except: Option<usize>,
     pub channels: Vec<String>,
-    pub data: DataType,
+    pub data: serde_json::Value,
     pub name: String,
 }

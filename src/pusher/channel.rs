@@ -1,11 +1,15 @@
 use std::collections::{HashMap, HashSet};
-use std::fmt::Debug;
+use std::fmt::{Debug};
 
+use hmac::{Hmac, Mac, NewMac};
+use hmac::crypto_mac::MacError;
 use serde::Serialize;
+use sha2::Sha256;
+use hex;
 
-use crate::server::messages::UserInfo;
-use crate::models::{ChannelEvent, PresenceInternalData, PresenceMemberRemovedData, SendClientEvent, SubscriptionData};
+use crate::models::{AppModel, ChannelEvent, PresenceInternalData, PresenceMemberRemovedData, SendClientEvent, SubscriptionData};
 use crate::pusher::messages::Broadcast;
+use crate::server::messages::{SubscribePayload, UserInfo};
 use crate::server::Sendable;
 
 #[derive(Serialize, Debug, Clone)]
@@ -68,13 +72,18 @@ impl Channel {
         }
     }
 
-    pub fn subscribe(&mut self, id: usize, data: Option<UserInfo>) -> Result<Option<Vec<Sendable>>, &'static str> {
+    pub fn subscribe(&mut self, id: usize, data: SubscribePayload, app: AppModel) -> Result<Option<Vec<Sendable>>, &'static str> {
         if self.sessions.contains(&id) {
             return Ok(None);
         }
 
         Ok(Some(if let ChannelType::Presence = self.internal_type {
-            let data = data.ok_or_else(|| "invalid user info for presence channel")?;
+            let signature = data.auth.ok_or("missing authorization signature")?;
+
+            validate_signature(signature, app.secret, id.to_string(), data.channel)
+                .or(Err("invalid authorization signature"))?;
+
+            let data = data.channel_data.ok_or_else(|| "invalid user info for presence channel")?;
 
             self.sessions.insert(id);
             self.sessions_info.insert(id, data.clone());
@@ -95,7 +104,7 @@ impl Channel {
                             presence: self.get_presence_data(),
                         },
                     }),
-                }
+                },
             ]
         } else {
             self.sessions.insert(id);
@@ -154,5 +163,59 @@ impl ChannelType {
         } else {
             Self::Public
         }
+    }
+}
+
+type HmacSha256 = Hmac<Sha256>;
+
+fn validate_signature(signature: String, secret: String, socket_id: String, channel: String) -> Result<(), MacError> {
+    let mut id = socket_id.to_string();
+    id.insert(4, '.');
+    let message = format!("{}:{}", id, channel);
+
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
+        .unwrap();
+
+    mac.update(message.as_bytes());
+
+    // println!("{:?}", std::str::from_utf8(&mac.finalize().into_bytes()));
+
+    mac.verify(signature.as_bytes())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use hmac::{Mac, Hmac, NewMac};
+    use sha2::Sha256;
+    use base64;
+    use crate::pusher::channel::validate_signature;
+
+
+    type HmacSha256 = Hmac<Sha256>;
+
+    #[test]
+    fn can_validate_signature() {
+        let secret = "c5tCyBjiHMWapmjRJ5QUPmWQ".to_string();
+        let socket_id = "1527.0736728473932610".to_string();
+        let signature = "4af4cd3e3d6a4ae147253ed702a9dbe0b732372b3b89ebd2053b94dad1c65361".to_string();
+        let channel = "presence-test".to_string();
+
+        let message = format!("{}:{}", socket_id, channel);
+
+        println!("{}", message);
+
+        let mut mac = HmacSha256::new_from_slice(hex::encode(secret.as_bytes()).as_bytes()).unwrap();
+
+        mac.update(hex::encode(message.as_bytes()).as_bytes());
+
+        let res = mac.finalize();
+
+        println!("{:?}", signature.as_bytes());
+        println!("{:?}", res.into_bytes());
+
+        assert!(
+            validate_signature(signature.to_string(), secret, socket_id.replace(".", ""), channel).is_ok()
+        );
     }
 }

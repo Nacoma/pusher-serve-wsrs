@@ -1,5 +1,6 @@
 use actix::prelude::*;
 use std::collections::HashMap;
+use std::convert::{TryFrom};
 use serde_json::Value;
 use serde::de::Visitor;
 use std::fmt::Formatter;
@@ -24,7 +25,7 @@ pub struct Disconnect {
     pub id: usize,
 }
 
-#[derive(Message)]
+#[derive(Message, Debug)]
 #[rtype(result = "()")]
 pub struct ClientEventMessage {
     pub id: usize,
@@ -33,21 +34,70 @@ pub struct ClientEventMessage {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "event", content = "data")]
+#[serde(try_from = "InterimClientEvent")]
 pub enum ClientEvent {
-    #[serde(rename = "pusher:subscribe")]
-    Subscribe {
-        channel: String,
-        auth: Option<String>,
-        #[serde(default, with = "serde_with::json::nested")]
-        channel_data: Option<UserInfo>,
-    },
+    Subscribe(SubscribePayload),
+    Unsubscribe(UnsubscribePayload),
+    Broadcast(BroadcastPayload),
+    Unknown(String, serde_json::Value),
+    Ping,
+}
 
-    #[serde(rename = "pusher:unsubscribe")]
-    Unsubscribe { channel: String },
+#[derive(Deserialize, Debug)]
+struct InterimClientEvent {
+    event: String,
+    data: serde_json::Value,
+    channel: Option<String>,
+}
 
-    #[serde(other)]
-    Unknown,
+impl TryFrom<InterimClientEvent> for ClientEvent {
+    type Error = serde_json::Error;
+
+    fn try_from(value: InterimClientEvent) -> Result<Self, Self::Error> {
+        let res = match value.event.as_str() {
+            "pusher:ping" => ClientEvent::Ping,
+            "pusher:subscribe" => ClientEvent::Subscribe(
+                serde_json::from_value(value.data)?
+            ),
+            "pusher:unsubscribe" => ClientEvent::Unsubscribe(
+                serde_json::from_value(value.data)?
+            ),
+            _ => if value.event.starts_with("client-") {
+                println!("{:?}", value.data);
+                ClientEvent::Broadcast(BroadcastPayload {
+                    event: value.event,
+                    data: value.data,
+                    channel: value.channel.unwrap(),
+                })
+            } else {
+                ClientEvent::Unknown(
+                    value.event,
+                    value.data
+                )
+            }
+        };
+
+        Ok(res)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SubscribePayload {
+    pub channel: String,
+    pub auth: Option<String>,
+    #[serde(default, with = "serde_with::json::nested")]
+    pub channel_data: Option<UserInfo>,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct UnsubscribePayload {
+    pub channel: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct BroadcastPayload {
+    pub channel: String,
+    pub data: serde_json::Value,
+    pub event: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -56,13 +106,12 @@ pub struct UserInfo {
     pub user_info: HashMap<String, Value>,
 }
 
-
 #[derive(Deserialize, Message, Debug)]
 #[rtype(result = "()")]
 pub struct BroadcastMessage {
     #[serde(skip_deserializing)]
     pub app: String,
-    pub data: DataType,
+    pub data: serde_json::Value,
     pub name: String,
     pub channels: Option<Vec<String>>,
     pub channel: Option<String>,
@@ -71,13 +120,6 @@ pub struct BroadcastMessage {
     pub socket_id: Option<usize>,
 }
 
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(untagged)]
-pub enum DataType {
-    String(String),
-    Map(HashMap<String, Value>),
-}
 
 struct SocketIdVisitor;
 

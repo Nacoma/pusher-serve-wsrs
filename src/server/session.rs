@@ -5,7 +5,7 @@ use actix_web_actors::ws;
 
 use log::{warn, debug};
 use crate::server::Server;
-use crate::server::messages::{Connect, Disconnect, ClientEvent, ClientEventMessage};
+use crate::server::messages::{Connect, Disconnect, ClientEventMessage, ClientEvent};
 
 /// How often heartbeat pings are sent
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -100,8 +100,8 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsChatSession {
                 let event: ClientEvent = serde_json::from_str(&text).unwrap();
 
                 match event {
-                    ClientEvent::Unknown => {
-                        warn!("unknown event received from client: {}", text);
+                    ClientEvent::Unknown(event, _) => {
+                        warn!("unknown event received from client: {}", event);
                     }
 
                     _ => {

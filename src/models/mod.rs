@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
-use crate::server::messages::{UserInfo, DataType};
+use crate::server::messages::{UserInfo};
 use crate::server::JsonMessage;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -96,7 +96,7 @@ pub struct PresenceChannelData {
 pub struct SendClientEvent {
     pub event: String,
     pub channel: String,
-    pub data: DataType,
+    pub data: serde_json::Value,
 }
 
 impl JsonMessage for SendClientEvent {}
@@ -149,17 +149,19 @@ pub struct User {
     pub id: String,
 }
 
-#[derive(Queryable, Serialize)]
+#[derive(Queryable, Serialize, Debug)]
 pub struct AppModel {
     pub id: i32,
     pub key: String,
+    pub secret: String,
     pub name: String,
 }
 
 use crate::schema::apps;
-#[derive(Insertable)]
+#[derive(Insertable, Debug)]
 #[table_name="apps"]
 pub struct NewApp<'a> {
     pub key:  &'a str,
     pub name: &'a str,
+    pub secret: &'a str,
 }

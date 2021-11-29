@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use log::{error};
 
 use app::App;
 
@@ -9,6 +10,7 @@ use crate::server::{Sendable};
 use crate::server::messages::{BroadcastMessage, ClientEventMessage, ClientEvent};
 use crate::pusher::messages::Broadcast;
 use crate::server::errors::WsrsError;
+use base64;
 use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
 use crate::repository::Repository;
@@ -81,28 +83,48 @@ impl Pusher {
         let app = self.apps.get_mut(&msg.app).unwrap();
 
         match msg.message {
-            ClientEvent::Subscribe {channel_data, auth: _, channel: channel_name} => {
+            ClientEvent::Subscribe(sub) => {
                 let channel = app
                     .channels
-                    .entry(channel_name.to_owned())
-                    .or_insert_with(|| Channel::new(channel_name.to_owned()));
+                    .entry(sub.channel.to_owned())
+                    .or_insert_with(|| Channel::new(sub.channel.to_owned()));
 
-                channel.subscribe(msg.id, channel_data).unwrap()
+                let app_model = self.repository.find_app_by_key(msg.app)?;
 
+                match channel.subscribe(msg.id, sub, app_model) {
+                    Err(e) => error!("{}", e),
+                    _ => {},
+                };
+
+                None
             },
-            ClientEvent::Unsubscribe {channel: channel_name} => {
+            ClientEvent::Unsubscribe(unsub) => {
                 let channel = app
                     .channels
-                    .entry(channel_name.to_owned())
-                    .or_insert_with(|| Channel::new(channel_name.to_owned()));
+                    .entry(unsub.channel.to_owned())
+                    .or_insert_with(|| Channel::new(unsub.channel.to_owned()));
 
                 match channel.unsubscribe(msg.id).unwrap() {
                     Some(s) => Some(vec![s]),
                     None => None,
                 }
-
             },
-            ClientEvent::Unknown => panic!("unknown subscription event"),
+
+            ClientEvent::Broadcast(broadcast) => {
+                let channel = app
+                    .channels
+                    .entry(broadcast.channel.to_owned())
+                    .or_insert_with(|| Channel::new(broadcast.channel.to_owned()));
+
+                Some(vec![channel.broadcast(Broadcast {
+                    except: None,
+                    data: broadcast.data,
+                    name: broadcast.event,
+                    channels: vec![broadcast.channel],
+                })])
+            },
+            ClientEvent::Ping => None,
+            ClientEvent::Unknown(event, _) => panic!("unknown subscription event: {}", event),
         }
     }
 
@@ -173,10 +195,6 @@ impl Pusher {
         }
     }
 
-    pub fn find_app(&self, id: i32) -> Option<AppModel> {
-        self.repository.find_app(id)
-    }
-
     pub fn create_app(&self, app_name: String) -> Result<AppModel, &'static str> {
         let rand_string: String = thread_rng()
             .sample_iter(&Alphanumeric)
@@ -184,9 +202,15 @@ impl Pusher {
             .map(char::from)
             .collect();
 
+        let rand_string2: String = thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(24)
+            .map(char::from)
+            .collect();
 
         Ok(self.repository.insert_app(&NewApp {
             key: rand_string.as_str(),
+            secret: hex::encode(rand_string2.as_str()).as_str(),
             name: app_name.as_str(),
         }))
     }
