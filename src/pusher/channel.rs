@@ -2,17 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 
 use hmac::{Hmac, Mac, NewMac};
-use serde::Serialize;
 use sha2::Sha256;
 
 use crate::models::{AppModel, ChannelEvent, PresenceInternalData, PresenceMemberRemovedData, SendClientEvent, SubscriptionData};
 use crate::pusher::messages::Broadcast;
-use crate::pusher::types::SocketId;
+use crate::pusher::socket_id::SocketId;
+use crate::server::{JsonMessage, Sendable};
 use crate::server::messages::{SubscribePayload, UserInfo};
-use crate::server::Sendable;
-
-#[derive(Serialize, Debug, Clone)]
-pub struct PresenceChannel {}
 
 #[derive(Debug)]
 pub struct Channel {
@@ -76,81 +72,66 @@ impl Channel {
             return Ok(None);
         }
 
-        Ok(Some(match self.internal_type {
+        if self.name.starts_with("presence-") {
+            let signature = data.auth.ok_or("missing authorization signature")?;
+
+            validate_auth_signature(
+                signature,
+                app.key,
+                app.secret,
+                id,
+                data.channel,
+                Some(serde_json::to_string(&data.channel_data).unwrap()),
+            )?;
+        }
+
+        let res = match self.internal_type {
             ChannelType::Presence => {
-                let signature = data.auth.ok_or("missing authorization signature")?;
+                // validation
 
-                validate_auth_signature(
-                    signature,
-                    app.key,
-                    app.secret,
-                    id,
-                    data.channel,
-                    Some(serde_json::to_string(&data.channel_data).unwrap()),
-                )?;
-
-                let data = data.channel_data.ok_or_else(|| "invalid user info for presence channel")?;
-
-                self.sessions.insert(id.val());
-                self.sessions_info.insert(id.val(), data.clone());
 
                 vec![
                     Sendable {
                         recipients: self.get_recipients(Some(id.val())),
                         message: Box::new(ChannelEvent::PusherInternalMemberAdded {
                             channel: self.name.clone(),
-                            data,
+                            // validation
+                            data: data.channel_data.as_ref().ok_or_else(|| "invalid user info for presence channel")?.clone(),
                         }),
                     },
-                    Sendable {
-                        recipients: vec![id.val()].into_iter().collect(),
-                        message: Box::new(ChannelEvent::PusherInternalSubscriptionSucceeded {
-                            channel: self.name.clone(),
-                            data: SubscriptionData {
-                                presence: self.get_presence_data(),
-                            },
-                        }),
-                    },
+                    self.on_subscription_succeeded(id),
                 ]
             }
-            ChannelType::Private => {
-                let signature = data.auth.ok_or("missing authorization signature")?;
+            _ => vec![self.on_subscription_succeeded(id)]
+        };
 
-                validate_auth_signature(
-                    signature,
-                    app.key,
-                    app.secret,
-                    id,
-                    data.channel,
-                    Some(serde_json::to_string(&data.channel_data).unwrap()),
-                )?;
+        self.sessions.insert(id.val());
 
-                self.sessions.insert(id.val());
+        match data.channel_data.clone() {
+            Some(v) => {
+                self.sessions_info.insert(id.val(), v.clone());
+            },
+            None => {}
+        };
 
-                vec![Sendable {
-                    recipients: vec![id.val()].into_iter().collect(),
-                    message: Box::new(ChannelEvent::PusherInternalSubscriptionSucceeded {
-                        channel: self.name.clone(),
-                        data: SubscriptionData {
-                            presence: None
-                        },
-                    }),
-                }]
-            }
-            ChannelType::Public => {
-                self.sessions.insert(id.val());
+        Ok(Some(res))
+    }
 
-                vec![Sendable {
-                    recipients: vec![id.val()].into_iter().collect(),
-                    message: Box::new(ChannelEvent::PusherInternalSubscriptionSucceeded {
-                        channel: self.name.clone(),
-                        data: SubscriptionData {
-                            presence: None
-                        },
-                    }),
-                }]
-            }
-        }))
+    fn on_subscription_succeeded(&mut self, id: SocketId) -> Sendable {
+        let presence = match self.name.starts_with("presence-") {
+            true => self.get_presence_data(),
+            false => None,
+        };
+
+        create_sendable(
+            HashSet::from([id.val()]),
+            ChannelEvent::PusherInternalSubscriptionSucceeded {
+                channel: self.name.clone(),
+                data: SubscriptionData {
+                    presence
+                },
+            },
+        )
     }
 
     pub fn unsubscribe(&mut self, id: usize) -> Result<Option<Sendable>, &'static str> {
@@ -162,19 +143,27 @@ impl Channel {
 
         let info = self.sessions_info.remove(&id);
 
-        if let ChannelType::Presence = self.internal_type {
-            Ok(Some(Sendable {
-                recipients: self.sessions.clone(),
-                message: Box::new(ChannelEvent::PusherInternalMemberRemoved {
+        let res = match self.internal_type {
+            ChannelType::Presence => Some(create_sendable(
+                self.sessions.clone(),
+                ChannelEvent::PusherInternalMemberRemoved {
                     channel: self.name.clone(),
                     data: PresenceMemberRemovedData {
                         user_id: info.ok_or_else(|| "user info is absent")?.user_id
                     },
-                }),
-            }))
-        } else {
-            Ok(None)
-        }
+                },
+            )),
+            _ => None
+        };
+
+        Ok(res)
+    }
+}
+
+fn create_sendable(recipients: HashSet<usize>, e: ChannelEvent) -> Sendable {
+    Sendable {
+        recipients,
+        message: Box::new(e),
     }
 }
 
@@ -238,7 +227,7 @@ mod tests {
     use serde_json::json;
 
     use crate::pusher::channel::validate_auth_signature;
-    use crate::pusher::types::SocketId;
+    use crate::pusher::socket_id::SocketId;
 
     #[test]
     fn validates_auth_payload_with_channel_data() {

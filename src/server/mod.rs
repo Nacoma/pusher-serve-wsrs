@@ -6,7 +6,7 @@ use log::debug;
 use rand::{self, Rng, rngs::ThreadRng};
 
 use crate::pusher::Pusher;
-use crate::pusher::types::SocketId;
+use crate::pusher::socket_id::SocketId;
 use crate::server::messages::{BroadcastMessage, ClientEventMessage, Connect, Disconnect, Message};
 
 pub mod messages;

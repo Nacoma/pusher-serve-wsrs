@@ -12,13 +12,13 @@ use crate::pusher::messages::Broadcast;
 use crate::server::errors::WsrsError;
 use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
-use crate::pusher::types::SocketId;
+use crate::pusher::socket_id::SocketId;
 use crate::repository::Repository;
 
 mod app;
 mod channel;
 pub mod messages;
-pub mod types;
+pub mod socket_id;
 
 pub struct Pusher {
     apps: HashMap<String, App>,
