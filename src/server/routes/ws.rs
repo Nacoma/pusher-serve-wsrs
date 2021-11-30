@@ -19,12 +19,10 @@ pub async fn connect(
     let app: String = req.match_info().get("app").unwrap().parse().unwrap();
 
     ws::start(
-        session::WsChatSession {
+        session::Session {
             id: 0,
             hb: Instant::now(),
             app,
-            room: "Main".to_owned(),
-            name: None,
             addr: srv.get_ref().clone(),
         },
         &req,

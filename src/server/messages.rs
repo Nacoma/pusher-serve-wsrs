@@ -1,7 +1,5 @@
 use actix::prelude::*;
-use std::collections::HashMap;
 use std::convert::{TryFrom};
-use serde_json::Value;
 use serde::de::Visitor;
 use std::fmt::Formatter;
 use serde::de::{Deserializer};
@@ -63,7 +61,6 @@ impl TryFrom<InterimClientEvent> for ClientEvent {
                 serde_json::from_value(value.data)?
             ),
             _ => if value.event.starts_with("client-") {
-                println!("{:?}", value.data);
                 ClientEvent::Broadcast(BroadcastPayload {
                     event: value.event,
                     data: value.data,
@@ -103,7 +100,7 @@ pub struct BroadcastPayload {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UserInfo {
     pub user_id: String,
-    pub user_info: HashMap<String, Value>,
+    pub user_info: serde_json::Value,
 }
 
 #[derive(Deserialize, Message, Debug)]

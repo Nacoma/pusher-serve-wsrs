@@ -1,17 +1,18 @@
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
+
+use actix::prelude::*;
+use log::debug;
+use rand::{self, Rng, rngs::ThreadRng};
+
+use crate::pusher::Pusher;
+use crate::pusher::types::SocketId;
+use crate::server::messages::{BroadcastMessage, ClientEventMessage, Connect, Disconnect, Message};
+
 pub mod messages;
 pub mod routes;
 pub mod session;
 pub mod errors;
-
-use std::collections::{HashMap, HashSet};
-
-use log::{debug};
-use actix::prelude::*;
-use rand::{self, rngs::ThreadRng, Rng};
-
-use crate::pusher::Pusher;
-use std::sync::{Arc, Mutex};
-use crate::server::messages::{Connect, Disconnect, BroadcastMessage, ClientEventMessage, Message};
 
 pub struct Server {
     pusher: Arc<Mutex<Pusher>>,
@@ -21,7 +22,7 @@ pub struct Server {
 
 pub struct Sendable {
     pub recipients: HashSet<usize>,
-    pub message: Box<dyn JsonMessage>
+    pub message: Box<dyn JsonMessage>,
 }
 
 pub trait JsonMessage: erased_serde::Serialize {}
@@ -73,7 +74,7 @@ impl Handler<Connect> for Server {
             .unwrap()
             .add_connection(
                 msg.app.to_owned(),
-                id,
+                SocketId::from(id),
             );
 
         self.send(sendable);

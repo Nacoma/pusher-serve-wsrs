@@ -1,14 +1,13 @@
 use std::collections::{HashMap, HashSet};
-use std::fmt::{Debug};
+use std::fmt::Debug;
 
 use hmac::{Hmac, Mac, NewMac};
-use hmac::crypto_mac::MacError;
 use serde::Serialize;
 use sha2::Sha256;
-use hex;
 
 use crate::models::{AppModel, ChannelEvent, PresenceInternalData, PresenceMemberRemovedData, SendClientEvent, SubscriptionData};
 use crate::pusher::messages::Broadcast;
+use crate::pusher::types::SocketId;
 use crate::server::messages::{SubscribePayload, UserInfo};
 use crate::server::Sendable;
 
@@ -72,52 +71,85 @@ impl Channel {
         }
     }
 
-    pub fn subscribe(&mut self, id: usize, data: SubscribePayload, app: AppModel) -> Result<Option<Vec<Sendable>>, &'static str> {
-        if self.sessions.contains(&id) {
+    pub fn subscribe(&mut self, id: SocketId, data: SubscribePayload, app: AppModel) -> Result<Option<Vec<Sendable>>, &'static str> {
+        if self.sessions.contains(&id.val()) {
             return Ok(None);
         }
 
-        Ok(Some(if let ChannelType::Presence = self.internal_type {
-            let signature = data.auth.ok_or("missing authorization signature")?;
+        Ok(Some(match self.internal_type {
+            ChannelType::Presence => {
+                let signature = data.auth.ok_or("missing authorization signature")?;
 
-            validate_signature(signature, app.secret, id.to_string(), data.channel)
-                .or(Err("invalid authorization signature"))?;
+                validate_auth_signature(
+                    signature,
+                    app.key,
+                    app.secret,
+                    id,
+                    data.channel,
+                    Some(serde_json::to_string(&data.channel_data).unwrap()),
+                )?;
 
-            let data = data.channel_data.ok_or_else(|| "invalid user info for presence channel")?;
+                let data = data.channel_data.ok_or_else(|| "invalid user info for presence channel")?;
 
-            self.sessions.insert(id);
-            self.sessions_info.insert(id, data.clone());
+                self.sessions.insert(id.val());
+                self.sessions_info.insert(id.val(), data.clone());
 
-            vec![
-                Sendable {
-                    recipients: self.get_recipients(Some(id)),
-                    message: Box::new(ChannelEvent::PusherInternalMemberAdded {
-                        channel: self.name.clone(),
-                        data,
-                    }),
-                },
-                Sendable {
-                    recipients: vec![id].into_iter().collect(),
+                vec![
+                    Sendable {
+                        recipients: self.get_recipients(Some(id.val())),
+                        message: Box::new(ChannelEvent::PusherInternalMemberAdded {
+                            channel: self.name.clone(),
+                            data,
+                        }),
+                    },
+                    Sendable {
+                        recipients: vec![id.val()].into_iter().collect(),
+                        message: Box::new(ChannelEvent::PusherInternalSubscriptionSucceeded {
+                            channel: self.name.clone(),
+                            data: SubscriptionData {
+                                presence: self.get_presence_data(),
+                            },
+                        }),
+                    },
+                ]
+            }
+            ChannelType::Private => {
+                let signature = data.auth.ok_or("missing authorization signature")?;
+
+                validate_auth_signature(
+                    signature,
+                    app.key,
+                    app.secret,
+                    id,
+                    data.channel,
+                    Some(serde_json::to_string(&data.channel_data).unwrap()),
+                )?;
+
+                self.sessions.insert(id.val());
+
+                vec![Sendable {
+                    recipients: vec![id.val()].into_iter().collect(),
                     message: Box::new(ChannelEvent::PusherInternalSubscriptionSucceeded {
                         channel: self.name.clone(),
                         data: SubscriptionData {
-                            presence: self.get_presence_data(),
+                            presence: None
                         },
                     }),
-                },
-            ]
-        } else {
-            self.sessions.insert(id);
+                }]
+            }
+            ChannelType::Public => {
+                self.sessions.insert(id.val());
 
-            vec![Sendable {
-                recipients: vec![id].into_iter().collect(),
-                message: Box::new(ChannelEvent::PusherInternalSubscriptionSucceeded {
-                    channel: self.name.clone(),
-                    data: SubscriptionData {
-                        presence: None
-                    },
-                }),
-            }]
+                vec![Sendable {
+                    recipients: vec![id.val()].into_iter().collect(),
+                    message: Box::new(ChannelEvent::PusherInternalSubscriptionSucceeded {
+                        channel: self.name.clone(),
+                        data: SubscriptionData {
+                            presence: None
+                        },
+                    }),
+                }]
+            }
         }))
     }
 
@@ -168,54 +200,79 @@ impl ChannelType {
 
 type HmacSha256 = Hmac<Sha256>;
 
-fn validate_signature(signature: String, secret: String, socket_id: String, channel: String) -> Result<(), MacError> {
-    let mut id = socket_id.to_string();
-    id.insert(4, '.');
-    let message = format!("{}:{}", id, channel);
+fn validate_auth_signature(
+    signature: String,
+    key: String,
+    secret: String,
+    socket_id: SocketId,
+    channel: String,
+    channel_data: Option<String>,
+) -> Result<(), &'static str> {
+    let components: Vec<&str> = signature.split(":").collect();
 
-    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-        .unwrap();
+    if components.len() != 2 || components[0] != key {
+        return Err("invalid auth signature");
+    }
+
+    let id_str: String = socket_id.into();
+
+    let message = if channel_data.is_some() && channel.starts_with("presence-") {
+        format!("{}:{}:{}", id_str, channel, channel_data.unwrap())
+    } else {
+        format!("{}:{}", id_str, channel)
+    };
+
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
 
     mac.update(message.as_bytes());
 
-    // println!("{:?}", std::str::from_utf8(&mac.finalize().into_bytes()));
+    let decoded_signature = hex::decode(components[1].as_bytes())
+        .or(Err("invalid auth signature"))?;
 
-    mac.verify(signature.as_bytes())
+    mac.verify(decoded_signature.as_slice())
+        .or(Err("invalid auth signature"))
 }
-
 
 #[cfg(test)]
 mod tests {
-    use hmac::{Mac, Hmac, NewMac};
-    use sha2::Sha256;
-    use base64;
-    use crate::pusher::channel::validate_signature;
+    use serde_json::json;
 
+    use crate::pusher::channel::validate_auth_signature;
+    use crate::pusher::types::SocketId;
 
-    type HmacSha256 = Hmac<Sha256>;
+    #[test]
+    fn validates_auth_payload_with_channel_data() {
+        let channel_data = json!({
+            "user_id": 10,
+            "user_info": {
+                "name": "Mr. Channels"
+            }
+        })
+            .to_string();
+
+        let r1 = validate_auth_signature(
+            "278d425bdf160c739803:31935e7d86dba64c2a90aed31fdc61869f9b22ba9d8863bba239c03ca481bc80".to_string(),
+            "278d425bdf160c739803".to_string(),
+            "7ad3773142a6692b25b8".to_string(),
+            SocketId::from(12341234),
+            "presence-foobar".to_string(),
+            Some(channel_data),
+        );
+
+        assert!(r1.is_ok());
+    }
 
     #[test]
     fn can_validate_signature() {
-        let secret = "c5tCyBjiHMWapmjRJ5QUPmWQ".to_string();
-        let socket_id = "1527.0736728473932610".to_string();
-        let signature = "4af4cd3e3d6a4ae147253ed702a9dbe0b732372b3b89ebd2053b94dad1c65361".to_string();
-        let channel = "presence-test".to_string();
-
-        let message = format!("{}:{}", socket_id, channel);
-
-        println!("{}", message);
-
-        let mut mac = HmacSha256::new_from_slice(hex::encode(secret.as_bytes()).as_bytes()).unwrap();
-
-        mac.update(hex::encode(message.as_bytes()).as_bytes());
-
-        let res = mac.finalize();
-
-        println!("{:?}", signature.as_bytes());
-        println!("{:?}", res.into_bytes());
-
-        assert!(
-            validate_signature(signature.to_string(), secret, socket_id.replace(".", ""), channel).is_ok()
+        let res = validate_auth_signature(
+            "278d425bdf160c739803:58df8b0c36d6982b82c3ecf6b4662e34fe8c25bba48f5369f135bf843651c3a4".to_string(),
+            "278d425bdf160c739803".to_string(),
+            "7ad3773142a6692b25b8".to_string(),
+            SocketId::from(12341234),
+            "private-foobar".to_string(),
+            None,
         );
+
+        assert!(res.is_ok());
     }
 }

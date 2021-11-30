@@ -10,14 +10,15 @@ use crate::server::{Sendable};
 use crate::server::messages::{BroadcastMessage, ClientEventMessage, ClientEvent};
 use crate::pusher::messages::Broadcast;
 use crate::server::errors::WsrsError;
-use base64;
 use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
+use crate::pusher::types::SocketId;
 use crate::repository::Repository;
 
 mod app;
 mod channel;
 pub mod messages;
+pub mod types;
 
 pub struct Pusher {
     apps: HashMap<String, App>,
@@ -91,12 +92,14 @@ impl Pusher {
 
                 let app_model = self.repository.find_app_by_key(msg.app)?;
 
-                match channel.subscribe(msg.id, sub, app_model) {
-                    Err(e) => error!("{}", e),
-                    _ => {},
-                };
+                match channel.subscribe(SocketId::from(msg.id), sub, app_model) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        error!("{}", e);
 
-                None
+                        None
+                    },
+                }
             },
             ClientEvent::Unsubscribe(unsub) => {
                 let channel = app
@@ -175,20 +178,21 @@ impl Pusher {
         }
     }
 
-    pub fn add_connection(&mut self, app: String, id: usize) -> Sendable
+    pub fn add_connection(&mut self, app: String, id: SocketId) -> Sendable
     {
         self.apps
             .entry(app)
             .or_insert(App::new());
 
         let mut recipients = HashSet::new();
-        recipients.insert(id);
+
+        recipients.insert(id.into());
 
         Sendable {
             recipients,
             message: Box::new(SystemEvent::PusherConnectionEstablished {
                 data: ConnectionEstablishedPayload {
-                    socket_id: id,
+                    socket_id: id.into(),
                     activity_timeout: 9000,
                 },
             })
@@ -202,15 +206,13 @@ impl Pusher {
             .map(char::from)
             .collect();
 
-        let rand_string2: String = thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(24)
-            .map(char::from)
-            .collect();
+        let pre_secret = thread_rng().gen::<[u8; 20]>().to_vec();
+
+        let secret = hex::encode(pre_secret);
 
         Ok(self.repository.insert_app(&NewApp {
             key: rand_string.as_str(),
-            secret: hex::encode(rand_string2.as_str()).as_str(),
+            secret: secret.as_str(),
             name: app_name.as_str(),
         }))
     }

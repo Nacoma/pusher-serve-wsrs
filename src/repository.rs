@@ -40,7 +40,6 @@ impl Repository {
     }
 
     pub fn insert_app(&self, app: &NewApp) -> AppModel {
-        println!("{:?}", app);
         let mut results: Vec<AppModel> = self.conn.transaction::<_, Error, _>(|| {
             insert_into(apps).values(app).execute(&self.conn)?;
 

@@ -81,7 +81,7 @@ pub struct SubscriptionData {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PresenceInternalData {
     pub ids: Vec<String>,
-    pub hash: HashMap<String, HashMap<String, Value>>,
+    pub hash: HashMap<String, serde_json::Value>,
     pub count: usize,
 }
 
