@@ -10,10 +10,9 @@ use crate::server::{Sendable};
 use crate::server::messages::{BroadcastMessage, ClientEventMessage, ClientEvent};
 use crate::pusher::messages::Broadcast;
 use crate::server::errors::WsrsError;
-use rand::{thread_rng, Rng};
-use rand::distributions::Alphanumeric;
 use crate::pusher::socket_id::SocketId;
 use crate::repository::Repository;
+use pusher_credentials::Key;
 
 mod app;
 mod channel;
@@ -200,19 +199,11 @@ impl Pusher {
     }
 
     pub fn create_app(&self, app_name: String) -> Result<AppModel, &'static str> {
-        let rand_string: String = thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(24)
-            .map(char::from)
-            .collect();
-
-        let pre_secret = thread_rng().gen::<[u8; 20]>().to_vec();
-
-        let secret = hex::encode(pre_secret);
+        let key = Key::generate();
 
         Ok(self.repository.insert_app(&NewApp {
-            key: rand_string.as_str(),
-            secret: secret.as_str(),
+            key: key.public.as_str(),
+            secret: key.private.as_str(),
             name: app_name.as_str(),
         }))
     }

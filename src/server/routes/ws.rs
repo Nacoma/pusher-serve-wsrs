@@ -30,7 +30,6 @@ pub async fn connect(
     )
 }
 
-
 pub async fn event(
     req: HttpRequest,
     info: web::Json<BroadcastMessage>,

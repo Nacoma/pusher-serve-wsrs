@@ -11,6 +11,12 @@ impl SocketId {
     }
 }
 
+impl ToString for SocketId {
+    fn to_string(&self) -> String {
+        (*self).into()
+    }
+}
+
 impl TryFrom<String> for SocketId {
     type Error = &'static str;
 

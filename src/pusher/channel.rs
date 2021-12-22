@@ -1,14 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 
-use hmac::{Hmac, Mac, NewMac};
-use sha2::Sha256;
-
 use crate::models::{AppModel, ChannelEvent, PresenceInternalData, PresenceMemberRemovedData, SendClientEvent, SubscriptionData};
 use crate::pusher::messages::Broadcast;
 use crate::pusher::socket_id::SocketId;
-use crate::server::{JsonMessage, Sendable};
+use crate::server::{Sendable};
 use crate::server::messages::{SubscribePayload, UserInfo};
+use pusher_credentials::Key;
 
 #[derive(Debug)]
 pub struct Channel {
@@ -72,17 +70,24 @@ impl Channel {
             return Ok(None);
         }
 
-        if self.name.starts_with("presence-") {
+        if self.name.starts_with("private-") || self.name.starts_with("presence-") {
+            let key = Key {
+                public: app.key,
+                private: app.secret,
+            };
+
             let signature = data.auth.ok_or("missing authorization signature")?;
 
-            validate_auth_signature(
+            if self.name.starts_with("private-") {
+                if !key.is_valid_signature(signature, vec![id.to_string(), data.channel]) {
+                    return Err("invalid signature");
+                }
+            } else if !key.is_valid_signature(
                 signature,
-                app.key,
-                app.secret,
-                id,
-                data.channel,
-                Some(serde_json::to_string(&data.channel_data).unwrap()),
-            )?;
+                vec![id.to_string(), data.channel, serde_json::to_string(&data.channel_data).unwrap()],
+            ) {
+                return Err("invalid signature");
+            }
         }
 
         let res = match self.internal_type {
@@ -184,84 +189,5 @@ impl ChannelType {
         } else {
             Self::Public
         }
-    }
-}
-
-type HmacSha256 = Hmac<Sha256>;
-
-fn validate_auth_signature(
-    signature: String,
-    key: String,
-    secret: String,
-    socket_id: SocketId,
-    channel: String,
-    channel_data: Option<String>,
-) -> Result<(), &'static str> {
-    let components: Vec<&str> = signature.split(":").collect();
-
-    if components.len() != 2 || components[0] != key {
-        return Err("invalid auth signature");
-    }
-
-    let id_str: String = socket_id.into();
-
-    let message = if channel_data.is_some() && channel.starts_with("presence-") {
-        format!("{}:{}:{}", id_str, channel, channel_data.unwrap())
-    } else {
-        format!("{}:{}", id_str, channel)
-    };
-
-    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
-
-    mac.update(message.as_bytes());
-
-    let decoded_signature = hex::decode(components[1].as_bytes())
-        .or(Err("invalid auth signature"))?;
-
-    mac.verify(decoded_signature.as_slice())
-        .or(Err("invalid auth signature"))
-}
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use crate::pusher::channel::validate_auth_signature;
-    use crate::pusher::socket_id::SocketId;
-
-    #[test]
-    fn validates_auth_payload_with_channel_data() {
-        let channel_data = json!({
-            "user_id": 10,
-            "user_info": {
-                "name": "Mr. Channels"
-            }
-        })
-            .to_string();
-
-        let r1 = validate_auth_signature(
-            "278d425bdf160c739803:31935e7d86dba64c2a90aed31fdc61869f9b22ba9d8863bba239c03ca481bc80".to_string(),
-            "278d425bdf160c739803".to_string(),
-            "7ad3773142a6692b25b8".to_string(),
-            SocketId::from(12341234),
-            "presence-foobar".to_string(),
-            Some(channel_data),
-        );
-
-        assert!(r1.is_ok());
-    }
-
-    #[test]
-    fn can_validate_signature() {
-        let res = validate_auth_signature(
-            "278d425bdf160c739803:58df8b0c36d6982b82c3ecf6b4662e34fe8c25bba48f5369f135bf843651c3a4".to_string(),
-            "278d425bdf160c739803".to_string(),
-            "7ad3773142a6692b25b8".to_string(),
-            SocketId::from(12341234),
-            "private-foobar".to_string(),
-            None,
-        );
-
-        assert!(res.is_ok());
     }
 }
