@@ -1,29 +1,26 @@
-use std::collections::HashMap;
+use actix::{Actor, Context, Handler};
 
-use actix::{Actor, Context, Handler, Recipient};
-use serde_json;
-
-use crate::channel::Channel;
-use crate::messages::{Connect, ConnectionEstablishedPayload, Disconnect, OutgoingMessage, SystemMessage};
+use crate::kind::WebSocket;
+use crate::messages::{Connect, Disconnect, MessagePayload, OutgoingMessage};
 use crate::socket::Socket;
 
-pub mod channel;
-mod session_manager;
+mod adapter;
+mod channel_managers;
+mod kind;
 mod messages;
+mod namespace;
+mod session_manager;
 mod socket;
+mod ws_handler;
+mod app;
+mod auth;
 
-
-pub struct Pusher {
-    apps: HashMap<String, App>,
-    connections: HashMap<usize, Recipient<OutgoingMessage>>,
-}
+#[derive(Default)]
+pub struct Pusher {}
 
 impl Pusher {
-    pub fn new() -> Self {
-        Pusher {
-            apps: HashMap::new(),
-            connections: HashMap::new(),
-        }
+    pub fn send(&self, _recipients: &[usize], _payload: Box<dyn MessagePayload>) {
+        todo!();
     }
 }
 
@@ -34,38 +31,15 @@ impl Actor for Pusher {
 impl Handler<Connect> for Pusher {
     type Result = usize;
 
-    fn handle(&mut self, msg: Connect, _ctx: &mut Context<Self>) -> Self::Result {
-        let socket = Socket::new();
-        msg.addr.do_send(OutgoingMessage(
-            serde_json::to_string(
-                &SystemMessage::PusherConnectionEstablished {
-                    data: ConnectionEstablishedPayload {
-                        activity_timeout: 999,
-                        socket_id: socket,
-                    }
-                }
-            )
-                .unwrap()
-        ))
-            .unwrap();
-
-        self.connections.insert(socket.id, msg.addr);
-
-        socket.id
+    fn handle(&mut self, _msg: Connect, _ctx: &mut Context<Self>) -> Self::Result {
+        todo!();
     }
 }
 
 impl Handler<Disconnect> for Pusher {
     type Result = ();
 
-    fn handle(&mut self, msg: Disconnect, _ctx: &mut Context<Self>) -> Self::Result {
-        self.connections.remove(&msg.id.id);
+    fn handle(&mut self, _msg: Disconnect, _ctx: &mut Context<Self>) -> Self::Result {
+        todo!();
     }
-}
-
-
-pub struct App {
-    public: String,
-    private: String,
-    channels: HashMap<String, Channel>,
 }

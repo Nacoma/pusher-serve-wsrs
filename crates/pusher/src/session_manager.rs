@@ -1,17 +1,12 @@
-use std::collections::{HashSet, HashMap};
 use crate::socket::Socket;
+use std::collections::{HashMap, HashSet};
 
+#[derive(Default)]
 pub struct SessionManager {
     sessions: HashMap<usize, Option<String>>,
 }
 
 impl SessionManager {
-    pub fn new() -> Self {
-        SessionManager {
-            sessions: HashMap::new()
-        }
-    }
-
     pub fn connect(&mut self, socket: Socket, data: Option<String>) {
         self.sessions.insert(socket.id, data);
     }
@@ -25,7 +20,7 @@ impl SessionManager {
     }
 
     pub fn sessions(&self) -> HashSet<usize> {
-        HashSet::from_iter(self.sessions.keys().map(|k| *k))
+        HashSet::from_iter(self.sessions.keys().copied())
     }
 }
 
@@ -36,7 +31,7 @@ mod tests {
 
     #[test]
     fn can_connect() {
-        let mut session = SessionManager::new();
+        let mut session = SessionManager::default();
         session.connect(Socket { id: 1 }, None);
 
         assert!(session.sessions().contains(&1))
@@ -44,7 +39,7 @@ mod tests {
 
     #[test]
     fn can_disconnect() {
-        let mut session = SessionManager::new();
+        let mut session = SessionManager::default();
         session.connect(Socket { id: 1 }, None);
         session.disconnect(&Socket { id: 1 });
 
@@ -53,9 +48,9 @@ mod tests {
 
     #[test]
     fn can_check_if_connected() {
-        let mut session = SessionManager::new();
+        let mut session = SessionManager::default();
         session.connect(Socket { id: 1 }, None);
 
-        assert!(session.is_connected(&Socket{id: 1}));
+        assert!(session.is_connected(&Socket { id: 1 }));
     }
 }
