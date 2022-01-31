@@ -1,27 +1,35 @@
-use std::borrow::{Borrow, BorrowMut};
+use std::sync::Arc;
 use actix::prelude::*;
-use actix::{Actor, Addr, AsyncContext, Context, Running};
+use actix::{Actor, Addr, AsyncContext, Running};
 use actix_web_actors::ws;
 use actix_web_actors::ws::{ProtocolError, WebsocketContext};
 use std::time::Instant;
 
-use crate::messages::{ClientEvent, PusherMessage, SubscribePayload};
-use crate::{OutgoingMessage, Socket, WebSocket};
-use crate::adapter::Adapter;
 use crate::app::App;
-use crate::channel_managers::{ChannelManger, PresenceChannelManager, PrivateChannelManager, PublicChannelManager};
+use crate::messages::PusherMessage;
+use crate::{OutgoingMessage, WebSocket};
+
+use crate::ws::{Connect, Disconnect, MessageWrapper, WebSocketHandler};
 
 pub struct Session {
-    id: Socket,
+    id: usize,
     pub hb: Instant,
-    service: Addr<WebSocketHandler>,
-    conn: Recipient<OutgoingMessage>,
-    app: String,
+    addr: Addr<WebSocketHandler>,
+    app: App,
 }
 
 impl Session {
+    pub fn new(app: App, addr: Addr<WebSocketHandler>) -> Self {
+        Self {
+            id: 0,
+            hb: Instant::now(),
+            app,
+            addr,
+        }
+    }
+
     fn start_hb(&self, _ctx: &mut WebsocketContext<Self>) {
-        todo!();
+        // todo
     }
 }
 
@@ -33,24 +41,33 @@ impl Actor for Session {
 
         let address = ctx.address();
 
-        self.service.send(Connect(WebSocket {
-            presence_data: None,
-            id: self.id,
-            app: App {
-                id: self.app.clone(),
-                key: "".to_string(),
-                secret: "".to_string(),
-            },
-            channels: vec![],
-            conn: address.recipient(),
-        }));
+        self.addr
+            .send(Connect {
+                ws: WebSocket {
+                    presence_data: None,
+                    id: self.id,
+                    app: self.app.clone(),
+                    channels: vec![],
+                    conn: address.recipient(),
+                },
+            })
+            .into_actor(self)
+            .then(|res, act, ctx| {
+                match res {
+                    Ok(res) => act.id = res,
+                    // something is wrong with chat server
+                    _ => ctx.stop(),
+                }
+                fut::ready(())
+            })
+            .wait(ctx);
     }
 
     fn stopping(&mut self, _ctx: &mut Self::Context) -> Running {
-        self.service.do_send(Disconnect {
+        self.addr.do_send(Disconnect {
             id: self.id,
             app: App {
-                id: self.app.clone(),
+                id: self.app.id.clone(),
                 key: "".to_string(),
                 secret: "".to_string(),
             },
@@ -74,21 +91,17 @@ impl StreamHandler<Result<ws::Message, ProtocolError>> for Session {
             Ok(msg) => {
                 match msg {
                     ws::Message::Text(txt) => {
-                        let event: ClientEvent = serde_json::from_str(&txt).unwrap();
+                        let message: PusherMessage = serde_json::from_str(&txt).unwrap();
 
-                        self.service
-                            .send(Event {
-                                event,
+                        self.addr
+                            .send(MessageWrapper {
+                                message,
                                 ws: WebSocket {
                                     channels: vec![],
                                     presence_data: None,
                                     conn: ctx.address().recipient(),
                                     id: self.id,
-                                    app: App {
-                                        id: self.app.clone(),
-                                        key: "".to_string(),
-                                        secret: "".to_string(),
-                                    },
+                                    app: self.app.clone(),
                                 },
                             })
                             .into_actor(self)
@@ -116,75 +129,5 @@ impl StreamHandler<Result<ws::Message, ProtocolError>> for Session {
                 ctx.stop();
             }
         };
-    }
-}
-
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct Connect(WebSocket);
-
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct Disconnect {
-    id: Socket,
-    app: App,
-}
-
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct Event {
-    ws: WebSocket,
-    event: ClientEvent,
-}
-
-pub struct WebSocketHandler {
-
-}
-
-impl WebSocketHandler {
-    fn channel_manager(&self, channel: &String) -> Box<dyn ChannelManger> {
-        return if channel.starts_with("presence-") {
-            Box::new(PresenceChannelManager {})
-        } else if channel.starts_with("private-") {
-            Box::new(PrivateChannelManager {})
-        } else {
-            Box::new(PublicChannelManager {})
-        }
-    }
-
-    fn subscribe_to_channel(&self, adapter: Box<dyn Adapter>, ws: WebSocket, payload: PusherMessage) {
-        let channel_manager = self.channel_manager(&payload.channel.as_ref().unwrap());
-
-        let result = channel_manager.join(&adapter, Clone::clone(&ws), payload);
-
-        if result.success {
-            adapter.namespace(&ws.app.id).add_socket(ws);
-        }
-    }
-}
-
-impl Actor for WebSocketHandler {
-    type Context = Context<Self>;
-}
-
-impl Handler<Connect> for WebSocketHandler {
-    type Result = ();
-
-    fn handle(&mut self, _msg: Connect, _ctx: &mut Self::Context) -> Self::Result {}
-}
-
-impl Handler<Disconnect> for WebSocketHandler {
-    type Result = ();
-
-    fn handle(&mut self, _msg: Disconnect, _ctx: &mut Self::Context) -> Self::Result {
-        todo!()
-    }
-}
-
-impl Handler<Event> for WebSocketHandler {
-    type Result = ();
-
-    fn handle(&mut self, _msg: Event, _ctx: &mut Self::Context) -> Self::Result {
-        todo!();
     }
 }

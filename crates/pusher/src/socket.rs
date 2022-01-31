@@ -16,13 +16,6 @@ impl Default for Socket {
         }
     }
 }
-impl Socket {
-    pub fn new() -> Self {
-        Socket {
-            id: thread_rng().gen(),
-        }
-    }
-}
 
 impl Serialize for Socket {
     fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>

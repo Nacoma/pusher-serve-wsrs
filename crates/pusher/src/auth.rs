@@ -1,15 +1,7 @@
+use crate::app::App;
 use hmac::{Hmac, Mac, NewMac};
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use sha2::Sha256;
 use std::fmt::Debug;
-use crate::app::App;
-use crate::Socket;
-
-#[derive(Clone)]
-pub struct Key {
-    pub public: String,
-    pub private: String,
-}
 
 #[derive(Debug)]
 pub struct AuthError(pub &'static str);
@@ -24,7 +16,12 @@ pub struct AuthPayload {
 }
 
 impl AuthPayload {
-    pub fn new(signature: String, id: String, channel: String, channel_data: Option<String>) -> AuthPayload {
+    pub fn new(
+        signature: String,
+        id: String,
+        channel: String,
+        channel_data: Option<String>,
+    ) -> AuthPayload {
         AuthPayload {
             id,
             signature: signature,
@@ -42,7 +39,7 @@ impl AuthPayload {
     }
 }
 
-pub fn validate_token(app: &App, auth_payload: AuthPayload) -> Result<(), AuthError> {
+pub fn validate_token(app: &App, auth_payload: &AuthPayload) -> Result<(), AuthError> {
     let sig_components = auth_payload.signature.split(':').collect::<Vec<&str>>();
 
     if sig_components.len() != 2 || sig_components[0] != app.key {
@@ -51,7 +48,8 @@ pub fn validate_token(app: &App, auth_payload: AuthPayload) -> Result<(), AuthEr
 
     let decoded_signature = hex::decode(sig_components[1].as_bytes()).unwrap_or_default();
 
-    let message = auth_payload.parts()
+    let message = auth_payload
+        .parts()
         .iter()
         .map(|p| p.to_string())
         .collect::<Vec<String>>()
@@ -71,33 +69,10 @@ pub fn validate_token(app: &App, auth_payload: AuthPayload) -> Result<(), AuthEr
     }
 }
 
-impl Key {
-    pub fn generate() -> Key {
-        Key {
-            public: generate_public_key(),
-            private: generate_secret_key(),
-        }
-    }
-}
-
-/// Generate a hex encoded secret key
-fn generate_secret_key() -> String {
-    hex::encode(thread_rng().gen::<[u8; 16]>().to_vec())
-}
-
-/// Generate a human readable public key
-fn generate_public_key() -> String {
-    thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(24)
-        .map(char::from)
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use crate::app::App;
-    use crate::auth::{AuthPayload, validate_token};
+    use crate::auth::{validate_token, AuthPayload};
 
     #[test]
     fn create_new_key() {
@@ -120,9 +95,14 @@ mod tests {
             "278d425bdf160c739803:58df8b0c36d6982b82c3ecf6b4662e34fe8c25bba48f5369f135bf843651c3a4"
                 .to_string();
 
-        let auth_payload = AuthPayload::new(signature, "1234.1234".to_string(), "private-foobar".to_string(), None);
+        let auth_payload = AuthPayload::new(
+            signature,
+            "1234.1234".to_string(),
+            "private-foobar".to_string(),
+            None,
+        );
 
-        let res = validate_token(&app, auth_payload);
+        let res = validate_token(&app, &auth_payload);
 
         assert!(res.is_ok());
     }
