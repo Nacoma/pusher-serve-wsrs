@@ -1,10 +1,11 @@
 use crate::kind::Channel;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::OutgoingMessage;
-use std::collections::HashMap;
-use serde_json::json;
+use crate::messages::JsonMessage;
 use crate::messages::PusherMessageChannelData;
+use crate::OutgoingMessage;
+use serde_json::json;
+use std::collections::HashMap;
 
 pub struct PusherSubscribeMessage {
     pub channel: Channel,
@@ -16,7 +17,7 @@ pub struct PusherUnsubscribeMessage {
     pub channel: Channel,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, JsonMessage)]
 #[serde(tag = "event")]
 pub enum ChannelEvent {
     #[serde(rename = "pusher_internal:subscription_succeeded")]
@@ -37,13 +38,9 @@ pub enum ChannelEvent {
         data: PresenceMemberRemovedData,
     },
     #[serde(rename = "pusher:connection_established")]
-    PusherConnectionEstablished {
-        data: ConnectionEstablishedData,
-    },
+    PusherConnectionEstablished { data: ConnectionEstablishedData },
     #[serde(rename = "pusher:pong")]
-    Ping {
-        data: serde_json::Value,
-    }
+    Ping { data: serde_json::Value },
 }
 
 impl ChannelEvent {
@@ -58,10 +55,7 @@ impl ChannelEvent {
     }
 
     pub fn pong() -> OutgoingMessage {
-        ChannelEvent::Ping {
-            data: json!({}),
-        }
-            .msg()
+        ChannelEvent::Ping { data: json!({}) }.msg()
     }
 
     pub fn presence_sub_succeeded(
@@ -70,12 +64,10 @@ impl ChannelEvent {
     ) -> OutgoingMessage {
         let count = members.len();
 
-        let ids: Vec<String> = members
-            .iter()
-            .map(|m| m.user_id.clone())
-            .collect();
+        let ids: Vec<String> = members.iter().map(|m| m.user_id.clone()).collect();
 
-        let hash: HashMap<String, serde_json::Value> = members.iter()
+        let hash: HashMap<String, serde_json::Value> = members
+            .iter()
             .map(|m| (m.user_id.clone(), m.user_info.clone()))
             .collect();
 
@@ -115,7 +107,7 @@ impl ChannelEvent {
     }
 
     fn msg(&self) -> OutgoingMessage {
-        OutgoingMessage(self.to_string())
+        OutgoingMessage(Box::new(self.clone()))
     }
 }
 
@@ -200,9 +192,9 @@ mod tests {
 
     #[test]
     fn presence_serialize() {
-        let mut hash = HashMap::default();
+        let hash = HashMap::default();
         let count = 1;
-        let ids = vec![1];
+        let ids = vec!["1".to_string()];
 
         let ce = ChannelEvent::PusherInternalSubscriptionSucceeded {
             channel: "presence-some".to_string(),
@@ -215,21 +207,24 @@ mod tests {
 
         let result = serde_json::to_value(ce).unwrap();
 
-        let t = serde_json::to_string(&json!({
+        let _t = serde_json::to_string(&json!({
             "what": "hello",
-        })).unwrap();
+        }))
+        .unwrap();
 
-        let expected = json!({
+        let s: String = json!({
+            "presence": {
+                "ids": [1_usize],
+                "count": 1_usize,
+                "hash": {"1": {}},
+            }
+        })
+        .to_string();
+
+        let expected: serde_json::Value = json!({
             "event": "pusher_internal:subscription_succeeded",
             "channel": "presence-some",
-            "data": json!({
-                "presence": {
-                    "ids": [1],
-                    "count": 1,
-                    "hash": {"1": {}},
-                }
-            })
-            .to_string()
+            "data": s
         });
 
         assert_eq!(expected, result);

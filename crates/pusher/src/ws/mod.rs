@@ -1,36 +1,29 @@
-use std::cell::RefCell;
-use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
 use crate::adapter::Adapter;
 use crate::app::App;
 use crate::kind::{Channel, Event};
-use crate::messages::{PusherMessage};
+use crate::messages::PusherMessage;
 use crate::socket::Socket;
 
-use crate::namespace::Namespace;
-use crate::ws::messages::{
-    ChannelEvent, PresenceMemberRemovedData, PusherSubscribeMessage, PusherUnsubscribeMessage,
-};
-use crate::{OutgoingMessage, WebSocket};
+use std::sync::Arc;
+
+use crate::messages::{JsonMessage, OutgoingMessage};
+use crate::ws::errors::{ErrorKind, WsError};
+use crate::ws::messages::{ChannelEvent, PusherSubscribeMessage, PusherUnsubscribeMessage};
+use crate::{AppRepo, WebSocket};
 use actix::prelude::*;
 use actix::{Actor, Context, Handler};
-use serde_json::json;
+use parking_lot::Mutex;
+use serde::Serialize;
 
 mod channel_managers;
 mod errors;
 mod messages;
 
 #[derive(Message)]
-#[rtype(usize)]
-pub struct Connect {
-    pub ws: WebSocket,
-}
-
-#[derive(Message)]
 #[rtype(result = "()")]
 pub struct Disconnect {
     pub id: usize,
-    pub app: App,
+    pub app_id: i64,
 }
 
 #[derive(Message)]
@@ -44,7 +37,7 @@ pub struct Broadcast {
 }
 
 #[derive(Message)]
-#[rtype(result = "()")]
+#[rtype(result = "Result<(), Box<dyn WsError>>")]
 pub struct MessageWrapper {
     pub ws: WebSocket,
     pub message: PusherMessage,
@@ -52,7 +45,8 @@ pub struct MessageWrapper {
 
 #[derive(Clone)]
 pub struct WebSocketHandler {
-    adapter: Arc<Mutex<dyn Adapter>>,
+    adapter: Arc<dyn Adapter>,
+    repo: Arc<Mutex<dyn AppRepo>>,
 }
 
 impl Actor for WebSocketHandler {
@@ -60,10 +54,8 @@ impl Actor for WebSocketHandler {
 }
 
 impl WebSocketHandler {
-    pub fn new(adapter: Arc<Mutex<dyn Adapter>>) -> Self {
-        Self {
-            adapter
-        }
+    pub fn new(adapter: Arc<dyn Adapter>, repo: Arc<Mutex<dyn AppRepo>>) -> Self {
+        Self { adapter, repo }
     }
 
     fn subscribe(
@@ -73,9 +65,7 @@ impl WebSocketHandler {
         recipient: Recipient<OutgoingMessage>,
         m: PusherSubscribeMessage,
     ) {
-        let mut adapter = self.adapter.lock().unwrap();
-
-        let ns = adapter.namespace(&app.id);
+        let ns = self.adapter.namespace(app.id);
 
         // // do authentication then
         // if let Err(e) = result {
@@ -92,7 +82,7 @@ impl WebSocketHandler {
                         ns.channel_members(&m.channel)
                             .iter()
                             .map(|(_, m)| m.clone())
-                            .collect()
+                            .collect(),
                     ))
                     .unwrap();
             }
@@ -105,7 +95,7 @@ impl WebSocketHandler {
 
         ns.add_socket(id, Clone::clone(&recipient));
 
-        let count = ns.add_to_channel(id, &m.channel, m.channel_data);
+        let _count = ns.add_to_channel(id, &m.channel, m.channel_data);
 
         if matches!(m.channel, Channel::Presence(_)) {
             let presence_data = ns.get_presence_data(id, &m.channel).unwrap();
@@ -115,7 +105,7 @@ impl WebSocketHandler {
                     recipient
                         .do_send(ChannelEvent::member_added(
                             &m.channel,
-                            presence_data.clone()
+                            presence_data.clone(),
                         ))
                         .unwrap();
                 }
@@ -130,24 +120,21 @@ impl WebSocketHandler {
         _recipient: Recipient<OutgoingMessage>,
         m: PusherUnsubscribeMessage,
     ) {
-        self.adapter.lock()
-            .unwrap()
-            .namespace(&app.id)
+        self.adapter
+            .namespace(app.id)
             .remove_from_channel(id, &m.channel);
 
-        self.notify_unsubscribed(id, &app.id, &m.channel);
+        self.notify_unsubscribed(id, app.id, &m.channel);
     }
 
-    fn notify_unsubscribed(&self, id: usize, app_id: &String, channel: &Channel) {
-        let mut adapter = self.adapter.lock().unwrap();
-
-        let ns = adapter.namespace(app_id);
+    fn notify_unsubscribed(&self, id: usize, app_id: i64, channel: &Channel) {
+        let ns = self.adapter.namespace(app_id);
 
         if matches!(channel, Channel::Presence(_)) {
-            for (recipient_id, recipient) in ns.channel_sockets(&channel) {
+            for (recipient_id, recipient) in ns.channel_sockets(channel) {
                 if id != recipient_id {
                     recipient
-                        .do_send(ChannelEvent::member_removed(&channel, id))
+                        .do_send(ChannelEvent::member_removed(channel, id))
                         .unwrap();
                 }
             }
@@ -163,24 +150,41 @@ impl WebSocketHandler {
     }
 }
 
+#[derive(Message)]
+#[rtype(result = "Result<usize, Box<dyn WsError>>")]
+pub struct Connect {
+    pub ws: WebSocket,
+}
+
 impl Handler<Connect> for WebSocketHandler {
-    type Result = usize;
+    type Result = Result<usize, Box<dyn WsError>>;
 
-    fn handle(&mut self, msg: Connect, _ctx: &mut Self::Context) -> Self::Result {
-        self.adapter
-            .lock()
-            .unwrap()
-            .namespace(&msg.ws.app.id)
-            .add_socket(msg.ws.id, Clone::clone(&msg.ws.conn));
+    fn handle(&mut self, msg: Connect, ctx: &mut Self::Context) -> Self::Result {
+        let app = self.repo.lock().find_by_id(msg.ws.app_id);
 
-        let socket_id = Socket::default().id;
+        if let Some(app) = app {
+            let id = Socket::default().id;
 
-        msg.ws
-            .conn
-            .do_send(ChannelEvent::connection_established(socket_id, 30))
-            .unwrap();
+            let ns = self.adapter.namespace(app.id);
 
-        socket_id
+            ns.add_socket(msg.ws.id, Clone::clone(&msg.ws.conn));
+
+            msg.ws
+                .conn
+                .do_send(ChannelEvent::connection_established(id, 30))
+                .unwrap();
+
+            Ok(id)
+        } else {
+            msg.ws
+                .conn
+                .send(ErrorKind::AppNotFound.msg())
+                .into_actor(self)
+                .then(|_, _, _| fut::ready(()))
+                .wait(ctx);
+
+            Err(Box::new(ErrorKind::AppNotFound))
+        }
     }
 }
 
@@ -188,100 +192,97 @@ impl Handler<Disconnect> for WebSocketHandler {
     type Result = ();
 
     fn handle(&mut self, msg: Disconnect, _ctx: &mut Self::Context) -> Self::Result {
-        let mut adapter = self.adapter
-            .lock()
-            .unwrap();
-
-        let mut ns = adapter.namespace(&msg.app.id);
+        let ns = self.adapter.namespace(msg.app_id);
 
         let channels = ns.channels_for_member(msg.id);
 
         for channel in &channels {
-            ns.remove_from_channel(msg.id, &channel);
+            ns.remove_from_channel(msg.id, channel);
         }
-
-        drop(adapter);
 
         for channel in &channels {
-            self.notify_unsubscribed(msg.id, &msg.app.id, &channel);
+            self.notify_unsubscribed(msg.id, msg.app_id, channel);
         }
 
-        self.adapter.lock()
-            .unwrap()
-            .namespace(&msg.app.id)
-            .remove_socket(msg.id);
+        ns.remove_socket(msg.id);
     }
 }
 
 impl Handler<MessageWrapper> for WebSocketHandler {
-    type Result = ();
+    type Result = Result<(), Box<dyn WsError>>;
 
-    fn handle(&mut self, msg: MessageWrapper, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: MessageWrapper, ctx: &mut Self::Context) -> Self::Result {
         let event = Event::from(msg.message.event);
 
-        match event {
-            Event::Ping => {
-                self.pong(msg.ws);
-            }
-            Event::Subscribe => {
-                self.subscribe(
-                    msg.ws.id,
-                    msg.ws.app,
-                    msg.ws.conn,
-                    PusherSubscribeMessage {
-                        channel: Channel::from(msg.message.data.channel),
-                        channel_data: msg.message.data.channel_data,
-                        auth: msg.message.data.auth,
-                    },
-                );
-            }
-            Event::Unsubscribe => {
-                self.unsubscribe(
-                    msg.ws.id,
-                    msg.ws.app,
-                    msg.ws.conn,
-                    PusherUnsubscribeMessage {
-                        channel: Channel::from(msg.message.data.channel),
-                    },
-                );
-            }
-            Event::Client(_) => {
-                self.handle_client_event(msg.ws);
-            }
-            Event::Unknown(_) => {
-                todo!();
-            }
-            Event::Invalid => {
-                todo!();
-            }
-        };
+        let app = self.repo.lock().find_by_id(msg.ws.app_id);
+
+        if let Some(app) = app {
+            match event {
+                Event::Ping => {
+                    self.pong(msg.ws);
+                }
+                Event::Subscribe => {
+                    self.subscribe(
+                        msg.ws.id,
+                        app,
+                        msg.ws.conn,
+                        PusherSubscribeMessage {
+                            channel: Channel::from(msg.message.data.channel),
+                            channel_data: msg.message.data.channel_data,
+                            auth: msg.message.data.auth,
+                        },
+                    );
+                }
+                Event::Unsubscribe => {
+                    self.unsubscribe(
+                        msg.ws.id,
+                        app,
+                        msg.ws.conn,
+                        PusherUnsubscribeMessage {
+                            channel: Channel::from(msg.message.data.channel),
+                        },
+                    );
+                }
+                Event::Client(_) => {
+                    self.handle_client_event(msg.ws);
+                }
+                Event::Invalid => {
+                    todo!();
+                }
+            };
+
+            Ok(())
+        } else {
+            msg.ws.conn.do_send(ErrorKind::AppNotFound.msg()).unwrap();
+
+            Err(Box::new(ErrorKind::AppNotFound))
+        }
     }
+}
+
+#[derive(Serialize, JsonMessage)]
+pub struct OutgoingBroadcast {
+    event: String,
+    data: String,
 }
 
 impl Handler<Broadcast> for WebSocketHandler {
     type Result = ();
 
-    fn handle(&mut self, msg: Broadcast, ctx: &mut Self::Context) -> Self::Result {
-        let mut adapter = self.adapter
-            .lock()
-            .unwrap();
-
-        let mut ns = adapter.namespace(&msg.app.id);
+    fn handle(&mut self, msg: Broadcast, _ctx: &mut Self::Context) -> Self::Result {
+        let ns = self.adapter.namespace(msg.app.id);
 
         for channel in msg.channels {
             let sockets = ns.channel_sockets(&Channel::from(channel));
 
             for socket in sockets.values() {
-                socket.do_send(OutgoingMessage(
-                    json!({
-                        "event": msg.event.clone(),
-                        "data": msg.message.to_string(),
-                    })
-                        .to_string()
-                ))
+                socket
+                    .do_send(OutgoingMessage(Box::new(OutgoingBroadcast {
+                        event: msg.event.clone(),
+                        data: msg.message.to_string(),
+                    })))
                     .unwrap();
             }
         }
-
     }
 }

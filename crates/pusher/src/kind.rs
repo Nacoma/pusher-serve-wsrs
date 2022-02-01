@@ -1,9 +1,7 @@
 use crate::app::App;
+
 use crate::OutgoingMessage;
 use actix::Recipient;
-
-pub trait JsonMessage: erased_serde::Serialize {}
-erased_serde::serialize_trait_object!(JsonMessage);
 
 #[derive(Clone)]
 pub struct WebSocket {
@@ -11,7 +9,7 @@ pub struct WebSocket {
     pub conn: Recipient<OutgoingMessage>,
     pub presence_data: Option<String>,
     pub channels: Vec<String>,
-    pub app: App,
+    pub app_id: i64,
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
@@ -60,7 +58,6 @@ pub enum Event {
     Subscribe,
     Unsubscribe,
     Client(String),
-    Unknown(String),
     Invalid,
 }
 

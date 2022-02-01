@@ -24,7 +24,7 @@ impl AuthPayload {
     ) -> AuthPayload {
         AuthPayload {
             id,
-            signature: signature,
+            signature,
             channel,
             channel_data,
         }
@@ -32,7 +32,7 @@ impl AuthPayload {
 
     pub fn parts(&self) -> Vec<String> {
         if let Some(channel_data) = self.channel_data.clone() {
-            vec![self.id.clone(), self.channel.clone(), channel_data.clone()]
+            vec![self.id.clone(), self.channel.clone(), channel_data]
         } else {
             vec![self.id.clone(), self.channel.clone()]
         }

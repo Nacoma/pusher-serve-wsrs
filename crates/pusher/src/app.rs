@@ -1,18 +1,21 @@
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use serde::Serialize;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct App {
-    pub id: String,
+    pub id: i64,
+    pub name: String,
     pub key: String,
     pub secret: String,
 }
 
-impl Default for App {
-    fn default() -> Self {
+impl App {
+    pub fn new(name: String) -> App {
         App {
-            id: "test".to_string(),
-            key: "ybEhzuYXaWWcAQ6reiJQRAfw".to_string(),
-            secret: "0f150d83f7ceebc8289286a020f418f6".to_string(),
+            id: thread_rng().gen::<u32>() as i64,
+            name,
+            key: generate_public_key(),
+            secret: generate_secret_key(),
         }
     }
 }

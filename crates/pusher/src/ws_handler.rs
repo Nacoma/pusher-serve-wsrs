@@ -1,11 +1,10 @@
-use std::sync::Arc;
 use actix::prelude::*;
 use actix::{Actor, Addr, AsyncContext, Running};
 use actix_web_actors::ws;
 use actix_web_actors::ws::{ProtocolError, WebsocketContext};
+
 use std::time::Instant;
 
-use crate::app::App;
 use crate::messages::PusherMessage;
 use crate::{OutgoingMessage, WebSocket};
 
@@ -15,15 +14,15 @@ pub struct Session {
     id: usize,
     pub hb: Instant,
     addr: Addr<WebSocketHandler>,
-    app: App,
+    app_id: i64,
 }
 
 impl Session {
-    pub fn new(app: App, addr: Addr<WebSocketHandler>) -> Self {
+    pub fn new(app_id: i64, addr: Addr<WebSocketHandler>) -> Self {
         Self {
             id: 0,
             hb: Instant::now(),
-            app,
+            app_id,
             addr,
         }
     }
@@ -46,7 +45,7 @@ impl Actor for Session {
                 ws: WebSocket {
                     presence_data: None,
                     id: self.id,
-                    app: self.app.clone(),
+                    app_id: self.app_id,
                     channels: vec![],
                     conn: address.recipient(),
                 },
@@ -54,8 +53,10 @@ impl Actor for Session {
             .into_actor(self)
             .then(|res, act, ctx| {
                 match res {
-                    Ok(res) => act.id = res,
-                    // something is wrong with chat server
+                    Ok(res) => match res {
+                        Ok(id) => act.id = id,
+                        Err(_) => ctx.stop(),
+                    },
                     _ => ctx.stop(),
                 }
                 fut::ready(())
@@ -66,11 +67,7 @@ impl Actor for Session {
     fn stopping(&mut self, _ctx: &mut Self::Context) -> Running {
         self.addr.do_send(Disconnect {
             id: self.id,
-            app: App {
-                id: self.app.id.clone(),
-                key: "".to_string(),
-                secret: "".to_string(),
-            },
+            app_id: self.app_id,
         });
 
         Running::Stop
@@ -81,7 +78,7 @@ impl Handler<OutgoingMessage> for Session {
     type Result = ();
 
     fn handle(&mut self, msg: OutgoingMessage, ctx: &mut Self::Context) -> Self::Result {
-        ctx.text(msg.0);
+        ctx.text(serde_json::to_string(&msg.0).unwrap());
     }
 }
 
@@ -101,11 +98,21 @@ impl StreamHandler<Result<ws::Message, ProtocolError>> for Session {
                                     presence_data: None,
                                     conn: ctx.address().recipient(),
                                     id: self.id,
-                                    app: self.app.clone(),
+                                    app_id: self.app_id,
                                 },
                             })
                             .into_actor(self)
-                            .then(|_, _, _| fut::ready(()))
+                            .then(|res, _, ctx| {
+                                match res {
+                                    Ok(res) => match res {
+                                        Ok(_) => println!("what"),
+                                        Err(e) => ctx.stop(),
+                                    },
+                                    _ => ctx.stop(),
+                                };
+
+                                fut::ready(())
+                            })
                             .wait(ctx);
                     }
                     ws::Message::Continuation(_) => {

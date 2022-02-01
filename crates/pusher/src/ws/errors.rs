@@ -1,15 +1,26 @@
-use crate::kind::Channel;
-
+use crate::messages::{JsonMessage, OutgoingMessage};
 use serde::Serialize;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 
-#[derive(Serialize)]
-pub struct PusherSubscriptionError {
-    event: &'static str,
-    data: PusherSubscriptionErrorData
+pub trait WsError: Error + Sync + Send {
+    fn is_fatal(&self) -> bool {
+        false
+    }
+
+    fn to_msg(&self) -> Option<String> {
+        None
+    }
 }
 
-#[derive(Serialize)]
-pub struct PusherSubscriptionErrorData {
+#[derive(Serialize, JsonMessage)]
+struct PusherSubscriptionError {
+    event: &'static str,
+    data: PusherSubscriptionErrorData,
+}
+
+#[derive(Debug, Serialize)]
+struct PusherSubscriptionErrorData {
     kind: &'static str,
     error: &'static str,
     status: i32,
@@ -23,41 +34,30 @@ impl Default for PusherSubscriptionError {
                 kind: "AuthError",
                 error: "Not authorized",
                 status: 403,
-            }
+            },
         }
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize, JsonMessage)]
 pub struct PusherSystemError {
     event: &'static str,
     data: PusherSystemErrorData,
 }
 
-#[derive(Serialize)]
+impl Display for PusherSystemError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.data.status.unwrap_or(0), self.data.error)
+    }
+}
+
+#[derive(Debug, Serialize)]
 struct PusherSystemErrorData {
     error: String,
     status: Option<i32>,
 }
 
-impl ToString for PusherSystemError {
-    fn to_string(&self) -> String {
-        serde_json::to_string(&self).unwrap()
-    }
-}
-
-impl PusherSystemError {
-    pub fn new(kind: ErrorKind) -> Self {
-        Self {
-            event: kind.to_event(),
-            data: PusherSystemErrorData {
-                error: kind.to_message(),
-                status: kind.to_code(),
-            }
-        }
-    }
-}
-
+#[derive(Debug)]
 pub enum ErrorKind {
     AppRequiresSsl,
     AppNotFound,
@@ -78,7 +78,44 @@ pub enum ErrorKind {
     ExceededRateLimit,
 }
 
+impl Display for ErrorKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_message())
+    }
+}
+
+impl Error for ErrorKind {}
+
+impl WsError for ErrorKind {
+    fn is_fatal(&self) -> bool {
+        matches!(self, ErrorKind::AppNotFound)
+    }
+
+    fn to_msg(&self) -> Option<String> {
+        Some(
+            serde_json::to_string(&PusherSystemError {
+                event: self.to_event(),
+                data: PusherSystemErrorData {
+                    error: self.to_message(),
+                    status: self.to_code(),
+                },
+            })
+            .unwrap(),
+        )
+    }
+}
+
 impl ErrorKind {
+    pub fn msg(&self) -> OutgoingMessage {
+        OutgoingMessage(Box::new(PusherSystemError {
+            event: self.to_event(),
+            data: PusherSystemErrorData {
+                error: self.to_message(),
+                status: self.to_code(),
+            },
+        }))
+    }
+
     fn to_code(&self) -> Option<i32> {
         match self {
             ErrorKind::AppRequiresSsl => Some(4000),
@@ -99,16 +136,13 @@ impl ErrorKind {
     }
 
     fn to_event(&self) -> &'static str {
-        match self {
-            _ => "pusher:error",
-        }
+        "pusher:error"
     }
 
     fn to_message(&self) -> String {
-        todo!();
-
         match self {
-            _ => "".to_string()
+            ErrorKind::AppNotFound => "App key does not exist".to_string(),
+            _ => todo!(),
         }
     }
 }

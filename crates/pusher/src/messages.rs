@@ -1,9 +1,20 @@
 use actix::prelude::*;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Message)]
 #[rtype(result = "()")]
-pub struct OutgoingMessage(pub String);
+pub struct OutgoingMessage(pub Box<dyn JsonMessage>);
+
+pub trait JsonMessage: erased_serde::Serialize + Send {}
+
+erased_serde::serialize_trait_object!(JsonMessage);
+
+impl Into<String> for OutgoingMessage {
+    fn into(self) -> String {
+        todo!()
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PusherMessage {
