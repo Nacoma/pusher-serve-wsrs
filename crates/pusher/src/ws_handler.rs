@@ -105,7 +105,7 @@ impl StreamHandler<Result<ws::Message, ProtocolError>> for Session {
                             .then(|res, _, ctx| {
                                 match res {
                                     Ok(res) => match res {
-                                        Ok(_) => println!("what"),
+                                        Ok(_) => (),
                                         Err(e) => ctx.stop(),
                                     },
                                     _ => ctx.stop(),
