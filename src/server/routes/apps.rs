@@ -1,8 +1,7 @@
-use actix_web::{HttpRequest, web, Responder, HttpResponse};
+use crate::pusher::Pusher;
+use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
-use crate::pusher::Pusher;
-
 
 #[derive(Deserialize)]
 pub struct CreateAppRequest {
@@ -11,7 +10,7 @@ pub struct CreateAppRequest {
 pub async fn store(
     _req: HttpRequest,
     info: web::Json<CreateAppRequest>,
-    pusher: web::Data<Arc<Mutex<Pusher>>>
+    pusher: web::Data<Arc<Mutex<Pusher>>>,
 ) -> impl Responder {
     let res = pusher
         .lock()
@@ -22,23 +21,13 @@ pub async fn store(
     HttpResponse::Ok().json(&res)
 }
 
-pub async fn index(
-    _req: HttpRequest,
-    pusher: web::Data<Arc<Mutex<Pusher>>>,
-) -> impl Responder {
-    let res = pusher
-        .lock()
-        .unwrap()
-        .list_apps()
-        .expect(":(");
+pub async fn index(_req: HttpRequest, pusher: web::Data<Arc<Mutex<Pusher>>>) -> impl Responder {
+    let res = pusher.lock().unwrap().list_apps().expect(":(");
 
     HttpResponse::Ok().json(res)
 }
 
-pub async fn delete(
-    req: HttpRequest,
-    pusher: web::Data<Arc<Mutex<Pusher>>>,
-) -> impl Responder {
+pub async fn delete(req: HttpRequest, pusher: web::Data<Arc<Mutex<Pusher>>>) -> impl Responder {
     let app_id: String = req.match_info().get("app").unwrap().parse().unwrap();
 
     pusher

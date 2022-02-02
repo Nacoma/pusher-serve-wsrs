@@ -3,16 +3,16 @@ use std::sync::{Arc, Mutex};
 
 use actix::prelude::*;
 use log::debug;
-use rand::{self, Rng, rngs::ThreadRng};
+use rand::{self, rngs::ThreadRng, Rng};
 
-use crate::pusher::Pusher;
 use crate::pusher::socket_id::SocketId;
+use crate::pusher::Pusher;
 use crate::server::messages::{BroadcastMessage, ClientEventMessage, Connect, Disconnect, Message};
 
+pub mod errors;
 pub mod messages;
 pub mod routes;
 pub mod session;
-pub mod errors;
 
 pub struct Server {
     pusher: Arc<Mutex<Pusher>>,
@@ -68,14 +68,12 @@ impl Handler<Connect> for Server {
 
         self.sessions.insert(id, msg.addr);
 
-        let sendable = self.pusher
+        let sendable = self
+            .pusher
             .clone()
             .lock()
             .unwrap()
-            .add_connection(
-                msg.app.to_owned(),
-                SocketId::from(id),
-            );
+            .add_connection(msg.app.to_owned(), SocketId::from(id));
 
         self.send(sendable);
 
@@ -88,7 +86,8 @@ impl Handler<Disconnect> for Server {
     type Result = ();
 
     fn handle(&mut self, msg: Disconnect, _: &mut Context<Self>) {
-        let sendables = self.pusher
+        let sendables = self
+            .pusher
             .clone()
             .lock()
             .unwrap()
@@ -104,11 +103,7 @@ impl Handler<BroadcastMessage> for Server {
     type Result = ();
 
     fn handle(&mut self, msg: BroadcastMessage, _: &mut Context<Self>) -> Self::Result {
-        let sendables = self.pusher
-            .clone()
-            .lock()
-            .unwrap()
-            .broadcast(msg);
+        let sendables = self.pusher.clone().lock().unwrap().broadcast(msg);
 
         for sendable in sendables {
             self.send(sendable);
@@ -120,7 +115,8 @@ impl Handler<ClientEventMessage> for Server {
     type Result = ();
 
     fn handle(&mut self, msg: ClientEventMessage, _: &mut Context<Self>) {
-        let sendables = self.pusher
+        let sendables = self
+            .pusher
             .clone()
             .lock()
             .unwrap()

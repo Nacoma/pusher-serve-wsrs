@@ -131,10 +131,12 @@ impl WebSocketHandler {
         let ns = self.adapter.namespace(app_id);
 
         if matches!(channel, Channel::Presence(_)) {
-            for (recipient_id, recipient) in ns.channel_sockets(channel) {
+            let recipients = ns.channel_sockets(channel);
+
+            for (recipient_id, recipient) in recipients {
                 if id != recipient_id {
                     recipient
-                        .do_send(ChannelEvent::member_removed(channel, id))
+                        .try_send(ChannelEvent::member_removed(channel, id))
                         .unwrap();
                 }
             }
@@ -159,7 +161,7 @@ pub struct Connect {
 impl Handler<Connect> for WebSocketHandler {
     type Result = Result<usize, Box<dyn WsError>>;
 
-    fn handle(&mut self, msg: Connect, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: Connect, _ctx: &mut Self::Context) -> Self::Result {
         let app = self.repo.lock().find_by_id(msg.ws.app_id);
 
         if let Some(app) = app {
@@ -171,18 +173,11 @@ impl Handler<Connect> for WebSocketHandler {
 
             msg.ws
                 .conn
-                .do_send(ChannelEvent::connection_established(id, 30))
+                .try_send(ChannelEvent::connection_established(id, 30))
                 .unwrap();
 
             Ok(id)
         } else {
-            msg.ws
-                .conn
-                .send(ErrorKind::AppNotFound.msg())
-                .into_actor(self)
-                .then(|_, _, _| fut::ready(()))
-                .wait(ctx);
-
             Err(Box::new(ErrorKind::AppNotFound))
         }
     }
@@ -192,17 +187,23 @@ impl Handler<Disconnect> for WebSocketHandler {
     type Result = ();
 
     fn handle(&mut self, msg: Disconnect, _ctx: &mut Self::Context) -> Self::Result {
+        println!("1");
         let ns = self.adapter.namespace(msg.app_id);
 
         let channels = ns.channels_for_member(msg.id);
+        println!("2");
 
         for channel in &channels {
             ns.remove_from_channel(msg.id, channel);
         }
 
+        println!("3");
+
         for channel in &channels {
             self.notify_unsubscribed(msg.id, msg.app_id, channel);
         }
+
+        println!("4");
 
         ns.remove_socket(msg.id);
     }
@@ -211,7 +212,7 @@ impl Handler<Disconnect> for WebSocketHandler {
 impl Handler<MessageWrapper> for WebSocketHandler {
     type Result = Result<(), Box<dyn WsError>>;
 
-    fn handle(&mut self, msg: MessageWrapper, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: MessageWrapper, _ctx: &mut Self::Context) -> Self::Result {
         let event = Event::from(msg.message.event);
 
         let app = self.repo.lock().find_by_id(msg.ws.app_id);
@@ -262,6 +263,7 @@ impl Handler<MessageWrapper> for WebSocketHandler {
 
 #[derive(Serialize, JsonMessage)]
 pub struct OutgoingBroadcast {
+    channel: String,
     event: String,
     data: String,
 }
@@ -273,11 +275,12 @@ impl Handler<Broadcast> for WebSocketHandler {
         let ns = self.adapter.namespace(msg.app.id);
 
         for channel in msg.channels {
-            let sockets = ns.channel_sockets(&Channel::from(channel));
+            let sockets = ns.channel_sockets(&Channel::from(channel.clone()));
 
             for socket in sockets.values() {
                 socket
                     .do_send(OutgoingMessage(Box::new(OutgoingBroadcast {
+                        channel: channel.clone(),
                         event: msg.event.clone(),
                         data: msg.message.to_string(),
                     })))

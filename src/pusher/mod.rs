@@ -1,17 +1,19 @@
+use log::error;
 use std::collections::{HashMap, HashSet};
-use log::{error};
 
 use app::App;
 
-use crate::models::{ConnectionEstablishedPayload, SystemEvent, NewApp, AppModel};
-use crate::models::responses::{GetChannelsResponseChannels, GetChannelsResponsePayload, GetChannelUsers, GetChannelUsersUser};
+use crate::models::responses::{
+    GetChannelUsers, GetChannelUsersUser, GetChannelsResponseChannels, GetChannelsResponsePayload,
+};
+use crate::models::{AppModel, ConnectionEstablishedPayload, NewApp, SystemEvent};
 use crate::pusher::channel::{Channel, ChannelType};
-use crate::server::{Sendable};
-use crate::server::messages::{BroadcastMessage, ClientEventMessage, ClientEvent};
 use crate::pusher::messages::Broadcast;
-use crate::server::errors::WsrsError;
 use crate::pusher::socket_id::SocketId;
 use crate::repository::Repository;
+use crate::server::errors::WsrsError;
+use crate::server::messages::{BroadcastMessage, ClientEvent, ClientEventMessage};
+use crate::server::Sendable;
 use pusher_credentials::Key;
 
 mod app;
@@ -26,36 +28,39 @@ pub struct Pusher {
 
 impl Pusher {
     pub fn new(repository: Repository) -> Pusher {
-        let apps: HashMap<String, App> = repository.apps()
+        let apps: HashMap<String, App> = repository
+            .apps()
             .iter()
             .map(|app| (app.key.clone(), App::new()))
             .collect();
 
-        Pusher {
-            apps,
-            repository,
-        }
+        Pusher { apps, repository }
     }
 }
 
 impl Pusher {
     pub fn remove_connection(&mut self, id: usize) -> Vec<Sendable> {
-        self.apps.iter_mut().map(|(_, app)| {
-            app.sessions.remove(&id);
+        self.apps
+            .iter_mut()
+            .map(|(_, app)| {
+                app.sessions.remove(&id);
 
-            app.channels.iter_mut().filter_map(|(_, channel)| {
-                channel.unsubscribe(id).ok()
+                app.channels
+                    .iter_mut()
+                    .filter_map(|(_, channel)| channel.unsubscribe(id).ok())
+                    .collect::<Vec<Option<Sendable>>>()
             })
-                .collect::<Vec<Option<Sendable>>>()
-
-        })
             .flatten()
             .filter_map(|s| s)
             .collect()
     }
 
     pub fn broadcast(&mut self, msg: BroadcastMessage) -> Vec<Sendable> {
-        let app = self.repository.find_app(msg.app.parse::<i32>().unwrap()).unwrap().key;
+        let app = self
+            .repository
+            .find_app(msg.app.parse::<i32>().unwrap())
+            .unwrap()
+            .key;
 
         let mut channels: Vec<String> = vec![];
 
@@ -97,9 +102,9 @@ impl Pusher {
                         error!("{}", e);
 
                         None
-                    },
+                    }
                 }
-            },
+            }
             ClientEvent::Unsubscribe(unsub) => {
                 let channel = app
                     .channels
@@ -110,7 +115,7 @@ impl Pusher {
                     Some(s) => Some(vec![s]),
                     None => None,
                 }
-            },
+            }
 
             ClientEvent::Broadcast(broadcast) => {
                 let channel = app
@@ -124,50 +129,62 @@ impl Pusher {
                     name: broadcast.event,
                     channels: vec![broadcast.channel],
                 })])
-            },
+            }
             ClientEvent::Ping => None,
             ClientEvent::Unknown(event, _) => panic!("unknown subscription event: {}", event),
         }
     }
 
     pub fn get_channels(&self, app: &str) -> Result<GetChannelsResponsePayload, WsrsError> {
-        let app = self.repository.find_app(app.parse::<i32>().unwrap()).unwrap().key;
+        let app = self
+            .repository
+            .find_app(app.parse::<i32>().unwrap())
+            .unwrap()
+            .key;
 
         if let Some(app) = self.apps.get(&app) {
             Ok(GetChannelsResponsePayload {
-                channels: app.channels.iter()
-                    .map(|(name, channel)| {
-                        match ChannelType::which(name.as_str()) {
-                            ChannelType::Presence => {
-                                GetChannelsResponseChannels {
-                                    name: name.to_string(),
-                                    user_count: Some(channel.sessions_info.len()),
-                                }
-                            },
-                            _ => {
-                                GetChannelsResponseChannels {
-                                    name: name.to_string(),
-                                    user_count: Some(channel.sessions.len()),
-                                }
-                            }
-                        }
+                channels: app
+                    .channels
+                    .iter()
+                    .map(|(name, channel)| match ChannelType::which(name.as_str()) {
+                        ChannelType::Presence => GetChannelsResponseChannels {
+                            name: name.to_string(),
+                            user_count: Some(channel.sessions_info.len()),
+                        },
+                        _ => GetChannelsResponseChannels {
+                            name: name.to_string(),
+                            user_count: Some(channel.sessions.len()),
+                        },
                     })
-                    .collect()
+                    .collect(),
             })
         } else {
             Err(WsrsError::app_not_found())
         }
     }
 
-    pub fn get_channel_users(&self, app: &str, channel_name: &str) -> Result<GetChannelUsers, WsrsError> {
-        let app = self.repository.find_app(app.parse::<i32>().unwrap()).unwrap().key;
+    pub fn get_channel_users(
+        &self,
+        app: &str,
+        channel_name: &str,
+    ) -> Result<GetChannelUsers, WsrsError> {
+        let app = self
+            .repository
+            .find_app(app.parse::<i32>().unwrap())
+            .unwrap()
+            .key;
 
         if let Some(app) = self.apps.get(&app) {
             if let Some(channel) = app.channels.get(channel_name) {
                 Ok(GetChannelUsers {
-                    users: channel.sessions_info.iter().map(|(_, i)| GetChannelUsersUser {
-                        id: i.user_id.clone(),
-                    }).collect()
+                    users: channel
+                        .sessions_info
+                        .iter()
+                        .map(|(_, i)| GetChannelUsersUser {
+                            id: i.user_id.clone(),
+                        })
+                        .collect(),
                 })
             } else {
                 Err(WsrsError::channel_not_found())
@@ -177,11 +194,8 @@ impl Pusher {
         }
     }
 
-    pub fn add_connection(&mut self, app: String, id: SocketId) -> Sendable
-    {
-        self.apps
-            .entry(app)
-            .or_insert(App::new());
+    pub fn add_connection(&mut self, app: String, id: SocketId) -> Sendable {
+        self.apps.entry(app).or_insert(App::new());
 
         let mut recipients = HashSet::new();
 
@@ -194,7 +208,7 @@ impl Pusher {
                     socket_id: id.into(),
                     activity_timeout: 9000,
                 },
-            })
+            }),
         }
     }
 

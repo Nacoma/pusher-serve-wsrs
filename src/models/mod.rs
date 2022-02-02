@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
-use crate::server::messages::{UserInfo};
+use crate::server::messages::UserInfo;
 use crate::server::JsonMessage;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -109,8 +109,9 @@ pub struct ConnectionEstablishedPayload {
 }
 
 fn serialize_socket_id<S>(v: &usize, s: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer {
+where
+    S: Serializer,
+{
     let mut v = v.to_string();
 
     v.insert(4, '.');
@@ -159,9 +160,9 @@ pub struct AppModel {
 
 use crate::schema::apps;
 #[derive(Insertable, Debug)]
-#[table_name="apps"]
+#[table_name = "apps"]
 pub struct NewApp<'a> {
-    pub key:  &'a str,
+    pub key: &'a str,
     pub name: &'a str,
     pub secret: &'a str,
 }

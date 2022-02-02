@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use super::channel::Channel;
-use crate::server::Sendable;
 use crate::pusher::messages::Broadcast;
+use crate::server::Sendable;
 
 #[derive(Debug)]
 pub struct App {
@@ -23,12 +23,12 @@ impl App {
     pub fn broadcast(&self, b: Broadcast) -> Vec<Sendable> {
         let channels = b.channels.clone();
 
-        channels.iter().filter_map(|channel_name| {
-            match self.channels.get(channel_name) {
+        channels
+            .iter()
+            .filter_map(|channel_name| match self.channels.get(channel_name) {
                 Some(channel) => Some(channel.broadcast(b.clone())),
                 None => None,
-            }
-        })
+            })
             .collect()
     }
 }

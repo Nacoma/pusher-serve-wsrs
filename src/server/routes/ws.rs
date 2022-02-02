@@ -4,11 +4,11 @@ use actix::Addr;
 use actix_web::{web, Error, HttpRequest, HttpResponse, Responder};
 use actix_web_actors::ws;
 
-use crate::server::{Server, session};
-use crate::server::messages::BroadcastMessage;
 use crate::pusher::Pusher;
+use crate::server::errors::{WsrsError, WsrsErrorKind};
+use crate::server::messages::BroadcastMessage;
+use crate::server::{session, Server};
 use std::sync::{Arc, Mutex};
-use crate::server::errors::{WsrsErrorKind, WsrsError};
 
 /// Entry point for our websocket route
 pub async fn connect(
@@ -51,10 +51,7 @@ pub async fn event(
     format!("")
 }
 
-pub async fn get_channels(
-    req: HttpRequest,
-    srv: web::Data<Arc<Mutex<Pusher>>>,
-) -> impl Responder {
+pub async fn get_channels(req: HttpRequest, srv: web::Data<Arc<Mutex<Pusher>>>) -> impl Responder {
     let app: String = req.match_info().get("app").unwrap().parse().unwrap();
 
     match srv.lock().unwrap().get_channels(&app) {
@@ -70,7 +67,11 @@ pub async fn get_channel_users(
     let app: String = req.match_info().get("app").unwrap().parse().unwrap();
     let channel: String = req.match_info().get("channel").unwrap().parse().unwrap();
 
-    match srv.lock().unwrap().get_channel_users(app.as_str(), channel.as_str()) {
+    match srv
+        .lock()
+        .unwrap()
+        .get_channel_users(app.as_str(), channel.as_str())
+    {
         Ok(res) => HttpResponse::Ok().json(res),
         Err(e) => err_response(e),
     }
@@ -82,9 +83,7 @@ fn err_response(e: WsrsError) -> HttpResponse {
     });
 
     match e.kind {
-        WsrsErrorKind::Other => {
-            HttpResponse::BadRequest().json(payload)
-        },
+        WsrsErrorKind::Other => HttpResponse::BadRequest().json(payload),
         WsrsErrorKind::ChannelNotFound | WsrsErrorKind::AppNotFound => {
             HttpResponse::NotFound().json(payload)
         }

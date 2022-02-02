@@ -19,6 +19,25 @@ impl Namespace {
         self.sockets.write().unwrap().insert(id, ws);
     }
 
+    pub fn channels(&self) -> Vec<Channel> {
+        self.channels
+            .read()
+            .unwrap()
+            .keys()
+            .map(|c| c.clone())
+            .collect()
+    }
+
+    pub fn users_per_channel(&self, channel: &Channel) -> usize {
+        self.channel_presence_data
+            .read()
+            .unwrap()
+            .get(channel)
+            .unwrap()
+            .keys()
+            .len()
+    }
+
     pub fn remove_socket(&self, id: usize) {
         self.sockets.write().unwrap().remove(&id);
     }

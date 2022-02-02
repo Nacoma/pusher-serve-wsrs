@@ -4,7 +4,7 @@ extern crate diesel;
 #[macro_use]
 extern crate pusher_message_derive;
 
-use crate::adapter::InMemoryAdapter;
+use crate::adapter::{Adapter, InMemoryAdapter};
 use crate::app::App as PusherApp;
 use crate::kind::WebSocket;
 use crate::messages::OutgoingMessage;
@@ -44,7 +44,7 @@ async fn main() -> std::io::Result<()> {
         SqliteConnection::establish("./tmp.db").unwrap(),
     )));
 
-    let adapter = Arc::new(InMemoryAdapter::default());
+    let adapter: Arc<dyn Adapter> = Arc::new(InMemoryAdapter::default());
 
     let handler = WebSocketHandler::new(adapter.clone(), repo.clone()).start();
 
@@ -59,6 +59,7 @@ async fn main() -> std::io::Result<()> {
             .service(api::apps::all)
             .service(api::apps::create)
             .service(api::events::publish)
+            .service(api::channels::all)
     })
     .bind("0.0.0.0:9911")?
     .run()

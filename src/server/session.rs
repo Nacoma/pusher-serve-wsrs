@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use actix::*;
 use actix_web_actors::ws;
-use log::{warn};
+use log::warn;
 
 use crate::server::messages::{ClientEvent, ClientEventMessage, Connect, Disconnect};
 use crate::server::Server;

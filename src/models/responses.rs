@@ -2,7 +2,7 @@ use serde::Serialize;
 
 #[derive(Serialize)]
 pub struct GetChannelsResponsePayload {
-    pub channels: Vec<GetChannelsResponseChannels>
+    pub channels: Vec<GetChannelsResponseChannels>,
 }
 
 #[derive(Serialize)]

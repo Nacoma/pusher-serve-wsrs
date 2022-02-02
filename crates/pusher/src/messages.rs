@@ -20,11 +20,11 @@ impl Into<String> for OutgoingMessage {
 pub struct PusherMessage {
     pub name: Option<String>,
     pub event: Option<String>,
-    pub data: MessageData,
+    pub data: PusherMessageData,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct MessageData {
+pub struct PusherMessageData {
     #[serde(with = "serde_with::json::nested", default)]
     pub channel_data: Option<PusherMessageChannelData>,
     pub channel: Option<String>,

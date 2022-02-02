@@ -4,8 +4,7 @@ use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 
 use std::collections::HashMap;
 
-use crate::AppRepo;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 
 pub trait Adapter: Send + Sync {
     fn namespace(&self, app_id: i64) -> MappedMutexGuard<Namespace>;

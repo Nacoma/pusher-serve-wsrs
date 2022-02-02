@@ -1,9 +1,9 @@
 use actix::prelude::*;
-use std::convert::{TryFrom};
+use serde::de::Deserializer;
 use serde::de::Visitor;
+use serde::{Deserialize, Serialize};
+use std::convert::TryFrom;
 use std::fmt::Formatter;
-use serde::de::{Deserializer};
-use serde::{Serialize, Deserialize};
 
 /// Chat server sends this messages to session
 #[derive(Message)]
@@ -54,23 +54,18 @@ impl TryFrom<InterimClientEvent> for ClientEvent {
     fn try_from(value: InterimClientEvent) -> Result<Self, Self::Error> {
         let res = match value.event.as_str() {
             "pusher:ping" => ClientEvent::Ping,
-            "pusher:subscribe" => ClientEvent::Subscribe(
-                serde_json::from_value(value.data)?
-            ),
-            "pusher:unsubscribe" => ClientEvent::Unsubscribe(
-                serde_json::from_value(value.data)?
-            ),
-            _ => if value.event.starts_with("client-") {
-                ClientEvent::Broadcast(BroadcastPayload {
-                    event: value.event,
-                    data: value.data,
-                    channel: value.channel.unwrap(),
-                })
-            } else {
-                ClientEvent::Unknown(
-                    value.event,
-                    value.data
-                )
+            "pusher:subscribe" => ClientEvent::Subscribe(serde_json::from_value(value.data)?),
+            "pusher:unsubscribe" => ClientEvent::Unsubscribe(serde_json::from_value(value.data)?),
+            _ => {
+                if value.event.starts_with("client-") {
+                    ClientEvent::Broadcast(BroadcastPayload {
+                        event: value.event,
+                        data: value.data,
+                        channel: value.channel.unwrap(),
+                    })
+                } else {
+                    ClientEvent::Unknown(value.event, value.data)
+                }
             }
         };
 
@@ -117,7 +112,6 @@ pub struct BroadcastMessage {
     pub socket_id: Option<usize>,
 }
 
-
 struct SocketIdVisitor;
 
 impl<'de> Visitor<'de> for SocketIdVisitor {
@@ -128,8 +122,8 @@ impl<'de> Visitor<'de> for SocketIdVisitor {
     }
 
     fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
+    where
+        E: serde::de::Error,
     {
         if value >= usize::MAX as i64 || value <= usize::MIN as i64 {
             Err(E::custom(format!("integer out of range: {}", value)))
@@ -139,8 +133,8 @@ impl<'de> Visitor<'de> for SocketIdVisitor {
     }
 
     fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
+    where
+        E: serde::de::Error,
     {
         if value >= usize::MAX as u64 || value <= usize::MIN as u64 {
             Err(E::custom(format!("integer out of range: {}", value)))
@@ -150,23 +144,23 @@ impl<'de> Visitor<'de> for SocketIdVisitor {
     }
 
     fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
+    where
+        E: serde::de::Error,
     {
         Ok(Some(value.replace(".", "").parse::<usize>().unwrap()))
     }
 
     fn visit_none<E>(self) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
+    where
+        E: serde::de::Error,
     {
         Ok(None)
     }
 }
 
 fn deserialize_socket_id<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
-    where
-        D: Deserializer<'de>,
+where
+    D: Deserializer<'de>,
 {
     deserializer.deserialize_any(SocketIdVisitor)
 }
@@ -185,7 +179,7 @@ mod tests {
             "socket_id": "1234.1234"
         }"#,
         )
-            .unwrap();
+        .unwrap();
 
         assert!(Option::is_some(&e.socket_id));
         assert_eq!(12341234, e.socket_id.unwrap());
@@ -201,7 +195,7 @@ mod tests {
             "socket_id": 12341234
         }"#,
         )
-            .unwrap();
+        .unwrap();
 
         assert!(Option::is_some(&e.socket_id));
         assert_eq!(12341234, e.socket_id.unwrap());
@@ -216,7 +210,7 @@ mod tests {
             "name": "asdfasfasdf"
         }"#,
         )
-            .unwrap();
+        .unwrap();
 
         assert!(Option::is_none(&e.socket_id));
     }

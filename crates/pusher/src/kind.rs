@@ -1,7 +1,6 @@
-use crate::app::App;
-
 use crate::OutgoingMessage;
 use actix::Recipient;
+use serde::Serialize;
 
 #[derive(Clone)]
 pub struct WebSocket {
@@ -12,7 +11,7 @@ pub struct WebSocket {
     pub app_id: i64,
 }
 
-#[derive(Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Serialize)]
 pub enum Channel {
     Presence(String),
     Private(String),

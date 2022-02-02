@@ -1,5 +1,6 @@
-pub mod apps;
 mod errors;
+pub mod apps;
+pub mod channels;
 pub mod events;
 
 use actix_web::{get, HttpResponse, Responder};

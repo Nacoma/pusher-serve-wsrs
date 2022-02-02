@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use actix::Addr;
 use actix_web::{post, web, HttpRequest, Responder};
@@ -18,6 +18,7 @@ pub struct AppQuery {
 #[derive(Debug, Deserialize)]
 pub struct Event {
     pub name: String,
+    #[serde(with = "serde_with::json::nested")]
     pub data: serde_json::Value,
     pub channels: Option<Vec<String>>,
     pub channel: Option<String>,
@@ -32,8 +33,6 @@ pub async fn publish(
     handler: web::Data<Addr<WebSocketHandler>>,
     repo: web::Data<Arc<PMutex<dyn AppRepo>>>,
 ) -> impl Responder {
-    println!("{:?}", event);
-
     let app = repo.lock().find_by_id(query.app_id).unwrap();
 
     let channels = if let Some(channels) = &event.channels {

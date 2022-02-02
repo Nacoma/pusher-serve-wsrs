@@ -1,11 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 
-use crate::models::{AppModel, ChannelEvent, PresenceInternalData, PresenceMemberRemovedData, SendClientEvent, SubscriptionData};
+use crate::models::{
+    AppModel, ChannelEvent, PresenceInternalData, PresenceMemberRemovedData, SendClientEvent,
+    SubscriptionData,
+};
 use crate::pusher::messages::Broadcast;
 use crate::pusher::socket_id::SocketId;
-use crate::server::{Sendable};
 use crate::server::messages::{SubscribePayload, UserInfo};
+use crate::server::Sendable;
 use pusher_credentials::Key;
 
 #[derive(Debug)]
@@ -49,7 +52,12 @@ impl Channel {
 
     fn get_recipients(&self, except: Option<usize>) -> HashSet<usize> {
         match except {
-            Some(id) => self.sessions.clone().into_iter().filter(|v| v != &id).collect(),
+            Some(id) => self
+                .sessions
+                .clone()
+                .into_iter()
+                .filter(|v| v != &id)
+                .collect(),
             None => self.sessions.clone(),
         }
     }
@@ -65,7 +73,12 @@ impl Channel {
         }
     }
 
-    pub fn subscribe(&mut self, id: SocketId, data: SubscribePayload, app: AppModel) -> Result<Option<Vec<Sendable>>, &'static str> {
+    pub fn subscribe(
+        &mut self,
+        id: SocketId,
+        data: SubscribePayload,
+        app: AppModel,
+    ) -> Result<Option<Vec<Sendable>>, &'static str> {
         if self.sessions.contains(&id.val()) {
             return Ok(None);
         }
@@ -84,7 +97,11 @@ impl Channel {
                 }
             } else if !key.is_valid_signature(
                 signature,
-                vec![id.to_string(), data.channel, serde_json::to_string(&data.channel_data).unwrap()],
+                vec![
+                    id.to_string(),
+                    data.channel,
+                    serde_json::to_string(&data.channel_data).unwrap(),
+                ],
             ) {
                 return Err("invalid signature");
             }
@@ -94,20 +111,23 @@ impl Channel {
             ChannelType::Presence => {
                 // validation
 
-
                 vec![
                     Sendable {
                         recipients: self.get_recipients(Some(id.val())),
                         message: Box::new(ChannelEvent::PusherInternalMemberAdded {
                             channel: self.name.clone(),
                             // validation
-                            data: data.channel_data.as_ref().ok_or_else(|| "invalid user info for presence channel")?.clone(),
+                            data: data
+                                .channel_data
+                                .as_ref()
+                                .ok_or_else(|| "invalid user info for presence channel")?
+                                .clone(),
                         }),
                     },
                     self.on_subscription_succeeded(id),
                 ]
             }
-            _ => vec![self.on_subscription_succeeded(id)]
+            _ => vec![self.on_subscription_succeeded(id)],
         };
 
         self.sessions.insert(id.val());
@@ -115,7 +135,7 @@ impl Channel {
         match data.channel_data.clone() {
             Some(v) => {
                 self.sessions_info.insert(id.val(), v.clone());
-            },
+            }
             None => {}
         };
 
@@ -132,9 +152,7 @@ impl Channel {
             HashSet::from([id.val()]),
             ChannelEvent::PusherInternalSubscriptionSucceeded {
                 channel: self.name.clone(),
-                data: SubscriptionData {
-                    presence
-                },
+                data: SubscriptionData { presence },
             },
         )
     }
@@ -154,11 +172,11 @@ impl Channel {
                 ChannelEvent::PusherInternalMemberRemoved {
                     channel: self.name.clone(),
                     data: PresenceMemberRemovedData {
-                        user_id: info.ok_or_else(|| "user info is absent")?.user_id
+                        user_id: info.ok_or_else(|| "user info is absent")?.user_id,
                     },
                 },
             )),
-            _ => None
+            _ => None,
         };
 
         Ok(res)
@@ -171,7 +189,6 @@ fn create_sendable(recipients: HashSet<usize>, e: ChannelEvent) -> Sendable {
         message: Box::new(e),
     }
 }
-
 
 #[derive(Debug, Copy, Clone)]
 pub enum ChannelType {

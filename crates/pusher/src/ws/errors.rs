@@ -11,6 +11,8 @@ pub trait WsError: Error + Sync + Send {
     fn to_msg(&self) -> Option<String> {
         None
     }
+
+    fn msg(&self) -> OutgoingMessage;
 }
 
 #[derive(Serialize, JsonMessage)]
@@ -103,10 +105,8 @@ impl WsError for ErrorKind {
             .unwrap(),
         )
     }
-}
 
-impl ErrorKind {
-    pub fn msg(&self) -> OutgoingMessage {
+    fn msg(&self) -> OutgoingMessage {
         OutgoingMessage(Box::new(PusherSystemError {
             event: self.to_event(),
             data: PusherSystemErrorData {
@@ -115,7 +115,9 @@ impl ErrorKind {
             },
         }))
     }
+}
 
+impl ErrorKind {
     fn to_code(&self) -> Option<i32> {
         match self {
             ErrorKind::AppRequiresSsl => Some(4000),

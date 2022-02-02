@@ -179,12 +179,6 @@ where
     }
 }
 
-#[derive(Serialize)]
-pub struct PusherBasicResponse {
-    event: String,
-    data: Option<String>,
-}
-
 #[cfg(test)]
 mod tests {
     // Note this useful idiom: importing names from outer (for mod tests) scope.
@@ -202,8 +196,6 @@ mod tests {
                 presence: Some(PresenceInternalData { count, ids, hash }),
             },
         };
-
-        println!("{:?}", ce);
 
         let result = serde_json::to_value(ce).unwrap();
 
