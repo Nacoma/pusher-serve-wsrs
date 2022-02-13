@@ -59,6 +59,7 @@ struct PusherSystemErrorData {
     status: Option<i32>,
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 pub enum ErrorKind {
     AppRequiresSsl,

@@ -47,6 +47,8 @@ impl Session {
                     app_id: app_id,
                 });
 
+                println!("stopping because missed heartbeat");
+
                 // stop actor
                 ctx.stop();
 
@@ -82,7 +84,8 @@ impl Actor for Session {
                 match res {
                     Ok(res) => match res {
                         Ok(id) => act.id = id,
-                        Err(_e) => {
+                        Err(e) => {
+                            println!("{:?}", e);
                             ctx.stop();
                         }
                     },
@@ -94,8 +97,6 @@ impl Actor for Session {
     }
 
     fn stopping(&mut self, _ctx: &mut Self::Context) -> Running {
-        println!("disconnecting!");
-
         self.addr.do_send(Disconnect {
             id: self.id,
             app_id: self.app_id,

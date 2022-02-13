@@ -12,6 +12,7 @@ use crate::ws::messages::{ChannelEvent, PusherSubscribeMessage, PusherUnsubscrib
 use crate::{AppRepo, WebSocket};
 use actix::prelude::*;
 use actix::{Actor, Context, Handler};
+use log::trace;
 use parking_lot::Mutex;
 use serde::Serialize;
 
@@ -101,7 +102,9 @@ impl WebSocketHandler {
             let presence_data = ns.get_presence_data(id, &m.channel).unwrap();
 
             for (recipient_id, recipient) in ns.channel_sockets(&m.channel) {
+                println!("wanna send: {}", recipient_id);
                 if id != recipient_id {
+                    println!("is sending");
                     recipient
                         .do_send(ChannelEvent::member_added(
                             &m.channel,
@@ -128,16 +131,22 @@ impl WebSocketHandler {
     }
 
     fn notify_unsubscribed(&self, id: usize, app_id: i64, channel: &Channel) {
+        trace!("{}: begin notify unsubscribed to channel:{}", id, channel.to_string());
+
         let ns = self.adapter.namespace(app_id);
+
+        trace!("{}: checking if presence channel:{}", id, channel.to_string());
 
         if matches!(channel, Channel::Presence(_)) {
             let recipients = ns.channel_sockets(channel);
 
             for (recipient_id, recipient) in recipients {
                 if id != recipient_id {
+                    trace!("{}: notifying unsubscribed to {}", id, recipient_id);
                     recipient
                         .try_send(ChannelEvent::member_removed(channel, id))
                         .unwrap();
+                    trace!("{}: notified unsubscribed to {}", id, recipient_id);
                 }
             }
         }
@@ -187,25 +196,21 @@ impl Handler<Disconnect> for WebSocketHandler {
     type Result = ();
 
     fn handle(&mut self, msg: Disconnect, _ctx: &mut Self::Context) -> Self::Result {
-        println!("1");
         let ns = self.adapter.namespace(msg.app_id);
 
         let channels = ns.channels_for_member(msg.id);
-        println!("2");
 
         for channel in &channels {
             ns.remove_from_channel(msg.id, channel);
         }
 
-        println!("3");
+        drop(ns);
 
         for channel in &channels {
             self.notify_unsubscribed(msg.id, msg.app_id, channel);
         }
 
-        println!("4");
-
-        ns.remove_socket(msg.id);
+        self.adapter.namespace(msg.app_id).remove_socket(msg.id);
     }
 }
 

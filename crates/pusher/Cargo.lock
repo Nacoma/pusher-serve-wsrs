@@ -1348,6 +1348,7 @@ dependencies = [
  "erased-serde",
  "hex",
  "hmac",
+ "log",
  "parking_lot 0.12.0",
  "pusher_message_derive",
  "rand 0.8.4",

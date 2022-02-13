@@ -1,13 +1,14 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 
 use actix_web::{get, post, web, HttpRequest, Responder};
+use parking_lot::Mutex;
 use serde::Deserialize;
 
 use crate::{AppRepo, HttpResponse, PusherApp};
 
 #[get("/apps")]
 pub async fn all(_req: HttpRequest, repo: web::Data<Arc<Mutex<dyn AppRepo>>>) -> impl Responder {
-    let apps = repo.lock().unwrap().all();
+    let apps = repo.lock().all();
 
     HttpResponse::Ok().json(apps)
 }
@@ -25,7 +26,7 @@ pub async fn create(
 ) -> impl Responder {
     let app = PusherApp::new(body.name.clone());
 
-    repo.lock().unwrap().insert_app(&app);
+    repo.lock().insert_app(&app).unwrap();
 
     HttpResponse::Created().json(app)
 }
